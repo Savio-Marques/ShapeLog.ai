@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.GetFile;
+import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.springframework.stereotype.Component;
 
@@ -28,11 +30,39 @@ public class FitnessBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        if (update.hasMessage() && update.getMessage().hasText()) {
-            String mensagemRecebida = update.getMessage().getText();
+        if (update.hasMessage()) {
             long chatId = update.getMessage().getChatId();
 
-            enviarMensagem(chatId, "Recebido: " + mensagemRecebida);
+            if (update.getMessage().hasText()) {
+                String mensagemRecebida = update.getMessage().getText();
+                enviarMensagem(chatId, "Texto recebido: " + mensagemRecebida);
+            } else if (update.getMessage().hasVoice()) {
+                Voice voice = update.getMessage().getVoice();
+                enviarMensagem(chatId, "Baixando áudio...");
+                byte[] audioBytes = obterBytesDoAudio(voice.getFileId());
+                if (audioBytes != null) {
+                    enviarMensagem(chatId, "Áudio baixado com sucesso! Tamanho: " + audioBytes.length + " bytes.");
+                } else {
+                    enviarMensagem(chatId, "Falha ao baixar o áudio.");
+                }
+            }
+        }
+    }
+
+    private byte[] obterBytesDoAudio(String fileId) {
+        try {
+            GetFile getFile = new GetFile();
+            getFile.setFileId(fileId);
+            org.telegram.telegrambots.meta.api.objects.File fileTelegram = execute(getFile);
+            
+            java.io.File fileLocal = downloadFile(fileTelegram);
+            byte[] bytes = java.nio.file.Files.readAllBytes(fileLocal.toPath());
+            
+            fileLocal.delete();
+            return bytes;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
         }
     }
 
