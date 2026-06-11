@@ -18,8 +18,15 @@ public class WorkoutDto {
     @Builder
     public static class ExerciseDto {
         private String name;
-        private Integer sets;
-        private String reps;
+        private List<SeriesDto> series;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SeriesDto {
+        private Integer reps;
         private Double weight;
     }
 }

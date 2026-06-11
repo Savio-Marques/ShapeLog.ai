@@ -25,6 +25,17 @@ public class MessageFormatter {
                 "📊 `/relatorio` - Exibe o progresso diário";
     }
 
+    public String StringformatGoalsUpdated(int cal, int prot, int carb, int fat) {
+        return String.format(
+                "🎯 *Metas Diárias Atualizadas!*\n" +
+                "🔥 *Calorias:* %d kcal\n" +
+                "💪 *Proteínas:* %dg\n" +
+                "🍞 *Carboidratos:* %dg\n" +
+                "🥑 *Gorduras:* %dg",
+                cal, prot, carb, fat
+        );
+    }
+
     public String formatGoalsUpdated(int cal, int prot, int carb, int fat) {
         return String.format(
                 "🎯 *Metas Diárias Atualizadas!*\n" +
@@ -38,62 +49,124 @@ public class MessageFormatter {
 
     public String formatMealRegistered(Meal meal) {
         return String.format(
-                "✅ *Refeição Registrada!*\n\n" +
-                "🥗 *Descrição:* %s\n" +
-                "🔥 *Calorias:* %d kcal\n" +
-                "💪 *Proteínas:* %.1fg\n" +
-                "🍞 *Carboidratos:* %.1fg\n" +
-                "🥑 *Gorduras:* %.1fg",
+                "### ✅ Refeição Registrada!\n\n" +
+                "🥗 *Itens:* %s\n" +
+                "📊 *Macros:* `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg",
                 meal.getDescription(),
-                meal.getCalories(),
-                meal.getProtein(),
-                meal.getCarbs(),
-                meal.getFat()
+                meal.getCalories() != null ? meal.getCalories() : 0,
+                formatDouble(meal.getProtein()),
+                formatDouble(meal.getCarbs()),
+                formatDouble(meal.getFat())
         );
     }
 
     public String formatWorkoutRegistered(WorkoutSession session) {
         List<WorkoutDto.ExerciseDto> exercises = deserializeExercises(session.getExercisesJson());
-        StringBuilder exercisesStr = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
+        sb.append("### 🏋️‍♂️ Treino Registrado\n\n");
+        
+        String desc = (session.getDescription() == null || session.getDescription().trim().isEmpty()) ? "Geral" : session.getDescription().trim();
+        sb.append("*Treino:* ").append(desc).append("\n\n");
+
         if (exercises != null) {
             for (WorkoutDto.ExerciseDto ex : exercises) {
-                exercisesStr.append(String.format("• %s: %d séries x %s reps (%.1f kg)\n",
-                        ex.getName(),
-                        ex.getSets() != null ? ex.getSets() : 0,
-                        ex.getReps() != null ? ex.getReps() : "N/A",
-                        ex.getWeight() != null ? ex.getWeight() : 0.0
-                ));
+                sb.append("*").append(ex.getName()).append(":*\n");
+                List<WorkoutDto.SeriesDto> series = ex.getSeries();
+                if (series != null) {
+                    for (int i = 0; i < series.size(); i++) {
+                        WorkoutDto.SeriesDto s = series.get(i);
+                        sb.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                                (i + 1),
+                                s.getReps() != null ? s.getReps() : 0,
+                                formatWeight(s.getWeight())
+                        ));
+                    }
+                }
+                sb.append("\n");
             }
         }
-
-        return String.format(
-                "🏋️‍♂️ *Treino Registrado!*\n\n" +
-                "📝 *Descrição:* %s\n" +
-                "⏱️ *Duração:* %d min\n\n" +
-                "🏋️‍♂️ *Exercícios:*\n%s",
-                session.getDescription(),
-                session.getDurationMinutes(),
-                exercisesStr.length() > 0 ? exercisesStr.toString() : "Nenhum exercício detalhado."
-        );
+        return sb.toString().trim();
     }
 
     public String formatDailyReport(DailyReportDto report) {
         StringBuilder mealsList = new StringBuilder();
+        int mealIdx = 1;
         for (Meal meal : report.getMeals()) {
-            mealsList.append(String.format("• %s (%d kcal) - P: %.1fg | C: %.1fg | G: %.1fg\n",
-                    meal.getDescription(), meal.getCalories(), meal.getProtein(), meal.getCarbs(), meal.getFat()));
+            mealsList.append(String.format("• *Refeição %d:* %s\n", mealIdx++, meal.getDescription()));
+            mealsList.append(String.format("  └ `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg\n\n",
+                    meal.getCalories() != null ? meal.getCalories() : 0,
+                    formatDouble(meal.getProtein()),
+                    formatDouble(meal.getCarbs()),
+                    formatDouble(meal.getFat())
+            ));
         }
-
-        StringBuilder workoutsList = new StringBuilder();
-        for (WorkoutSession w : report.getWorkouts()) {
-            workoutsList.append(String.format("• %s (%d min)\n", w.getDescription(), w.getDurationMinutes()));
-        }
-
         if (report.getMeals().isEmpty()) {
             mealsList.append("Nenhuma refeição registrada hoje.\n");
         }
-        if (report.getWorkouts().isEmpty()) {
+
+        StringBuilder workoutsList = new StringBuilder();
+        List<WorkoutDto.ExerciseDto> allExercises = new java.util.ArrayList<>();
+        String bestDesc = "Geral";
+
+        for (WorkoutSession w : report.getWorkouts()) {
+            String desc = w.getDescription();
+            if (desc != null && !desc.trim().isEmpty() && !"Geral".equalsIgnoreCase(desc.trim()) && !"Treino".equalsIgnoreCase(desc.trim())) {
+                bestDesc = desc.trim();
+            } else if (("Geral".equals(bestDesc) || "Treino".equals(bestDesc)) && desc != null && !desc.trim().isEmpty()) {
+                bestDesc = desc.trim();
+            }
+
+            List<WorkoutDto.ExerciseDto> exercises = deserializeExercises(w.getExercisesJson());
+            if (exercises != null) {
+                allExercises.addAll(exercises);
+            }
+        }
+
+        List<WorkoutDto.ExerciseDto> uniqueExercises = new java.util.ArrayList<>();
+        for (WorkoutDto.ExerciseDto newEx : allExercises) {
+            WorkoutDto.ExerciseDto match = null;
+            for (WorkoutDto.ExerciseDto ex : uniqueExercises) {
+                if (ex.getName() != null && newEx.getName() != null && ex.getName().trim().equalsIgnoreCase(newEx.getName().trim())) {
+                    match = ex;
+                    break;
+                }
+            }
+            if (match != null) {
+                List<WorkoutDto.SeriesDto> matchSeries = match.getSeries();
+                if (matchSeries == null) {
+                    matchSeries = new java.util.ArrayList<>();
+                    match.setSeries(matchSeries);
+                } else {
+                    matchSeries = new java.util.ArrayList<>(matchSeries);
+                    match.setSeries(matchSeries);
+                }
+                if (newEx.getSeries() != null) {
+                    matchSeries.addAll(newEx.getSeries());
+                }
+            } else {
+                uniqueExercises.add(newEx);
+            }
+        }
+
+        if (uniqueExercises.isEmpty()) {
             workoutsList.append("Nenhum treino registrado hoje.\n");
+        } else {
+            workoutsList.append("*Treino:* ").append(bestDesc).append("\n\n");
+            for (WorkoutDto.ExerciseDto ex : uniqueExercises) {
+                workoutsList.append("*").append(ex.getName()).append(":*\n");
+                List<WorkoutDto.SeriesDto> series = ex.getSeries();
+                if (series != null) {
+                    for (int i = 0; i < series.size(); i++) {
+                        WorkoutDto.SeriesDto s = series.get(i);
+                        workoutsList.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                                (i + 1),
+                                s.getReps() != null ? s.getReps() : 0,
+                                formatWeight(s.getWeight())
+                        ));
+                    }
+                }
+                workoutsList.append("\n");
+            }
         }
 
         UserTelegram user = report.getUser();
@@ -102,22 +175,41 @@ public class MessageFormatter {
         int targetCarb = user.getTargetCarbs() > 0 ? user.getTargetCarbs() : 200;
         int targetFat = user.getTargetFat() > 0 ? user.getTargetFat() : 60;
 
+        int totalCal = report.getTotalCalories();
+        double totalProt = report.getTotalProtein();
+        double totalCarb = report.getTotalCarbs();
+        double totalFat = report.getTotalFat();
+
         return String.format(
-                "📅 *RELATÓRIO DO DIA*\n\n" +
-                "🥗 *Refeições:*\n%s\n" +
-                "🏋️‍♂️ *Treinos:*\n%s\n" +
-                "📊 *Totais do Dia vs. Metas:*\n" +
-                "• *Calorias:* %d / %d kcal (%.1f%%)\n" +
-                "• *Proteínas:* %.1f / %dg (%.1f%%)\n" +
-                "• *Carbos:* %.1f / %dg (%.1f%%)\n" +
-                "• *Gorduras:* %.1f / %dg (%.1f%%)",
-                mealsList.toString(),
-                workoutsList.toString(),
-                report.getTotalCalories(), targetCal, (report.getTotalCalories() * 100.0 / targetCal),
-                report.getTotalProtein(), targetProt, (report.getTotalProtein() * 100.0 / targetProt),
-                report.getTotalCarbs(), targetCarb, (report.getTotalCarbs() * 100.0 / targetCarb),
-                report.getTotalFat(), targetFat, (report.getTotalFat() * 100.0 / targetFat)
+                "### 📆 RELATÓRIO DO DIA\n\n" +
+                "#### 🥗 REFEIÇÕES\n%s\n\n" +
+                "#### 🏋️‍♂️ TREINOS\n%s\n\n" +
+                "#### 📊 TOTAIS VS. METAS\n\n" +
+                "| Macronutriente | Consumido / Meta\n" +
+                "| *Calorias* | %d / %d kcal\n" +
+                "| *Proteínas* | %s / %dg\n" +
+                "| *Carbos* | %s / %dg\n" +
+                "| *Gorduras* | %s / %dg",
+                mealsList.toString().trim(),
+                workoutsList.toString().trim(),
+                totalCal, targetCal,
+                formatDouble(totalProt), targetProt,
+                formatDouble(totalCarb), targetCarb,
+                formatDouble(totalFat), targetFat
         );
+    }
+
+    private String formatDouble(Double value) {
+        if (value == null) return "0,0";
+        return String.format("%.1f", value).replace('.', ',');
+    }
+
+    private String formatWeight(Double value) {
+        if (value == null) return "0";
+        if (value == value.longValue()) {
+            return String.format("%d", value.longValue());
+        }
+        return String.format("%.1f", value).replace('.', ',');
     }
 
     private List<WorkoutDto.ExerciseDto> deserializeExercises(String json) {
