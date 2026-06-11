@@ -36,9 +36,13 @@ public class MealService {
         return mealRepository.save(meal);
     }
 
-    public List<Meal> getMealsForToday(UserTelegram user) {
-        LocalDateTime start = LocalDateTime.now().with(java.time.LocalTime.MIN);
-        LocalDateTime end = LocalDateTime.now().with(java.time.LocalTime.MAX);
+    public List<Meal> getMealsForDate(UserTelegram user, java.time.LocalDate date) {
+        LocalDateTime start = date.atStartOfDay();
+        LocalDateTime end = date.atTime(java.time.LocalTime.MAX);
         return mealRepository.findByUserAndCreatedAtBetween(user, start, end);
+    }
+
+    public List<Meal> getMealsForToday(UserTelegram user) {
+        return getMealsForDate(user, java.time.LocalDate.now());
     }
 }

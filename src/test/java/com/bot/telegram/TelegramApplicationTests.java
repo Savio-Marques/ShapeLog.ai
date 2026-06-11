@@ -159,4 +159,53 @@ class TelegramApplicationTests {
         assertTrue(mergedSession.getExercisesJson().contains("80.0"));
         assertTrue(mergedSession.getExercisesJson().contains("100.0"));
     }
+
+    @Test
+    void testMessageFormatterDynamicHeaders() {
+        MessageFormatter formatter = new MessageFormatter();
+
+        UserTelegram user = UserTelegram.builder()
+                .firstName("Sávio")
+                .build();
+
+        DailyReportDto report = DailyReportDto.builder()
+                .meals(List.of())
+                .workouts(List.of())
+                .user(user)
+                .build();
+
+        // 1. Test Today
+        String reportToday = formatter.formatDailyReport(report, java.time.LocalDate.now());
+        assertTrue(reportToday.contains("### 📆 RELATÓRIO DE HOJE"));
+
+        // 2. Test Yesterday
+        String reportYesterday = formatter.formatDailyReport(report, java.time.LocalDate.now().minusDays(1));
+        assertTrue(reportYesterday.contains("### 📆 RELATÓRIO DE ONTEM"));
+
+        // 3. Test Specific Date
+        String reportSpecific = formatter.formatDailyReport(report, java.time.LocalDate.of(2026, 6, 8));
+        assertTrue(reportSpecific.contains("### 📆 RELATÓRIO DE 08/06/2026"));
+    }
+
+    @Test
+    void testParseDateLogic() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        
+        // Matcher for DD/MM/YYYY
+        String input1 = "10/06/2026";
+        assertTrue(input1.matches("\\d{2}/\\d{2}/\\d{4}"));
+        java.time.LocalDate parsed1 = java.time.LocalDate.parse(input1, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        assertEquals(2026, parsed1.getYear());
+        assertEquals(6, parsed1.getMonthValue());
+        assertEquals(10, parsed1.getDayOfMonth());
+
+        // Matcher for DD/MM
+        String input2 = "12/04";
+        assertTrue(input2.matches("\\d{2}/\\d{2}"));
+        String fullDate = input2 + "/" + today.getYear();
+        java.time.LocalDate parsed2 = java.time.LocalDate.parse(fullDate, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        assertEquals(today.getYear(), parsed2.getYear());
+        assertEquals(4, parsed2.getMonthValue());
+        assertEquals(12, parsed2.getDayOfMonth());
+    }
 }

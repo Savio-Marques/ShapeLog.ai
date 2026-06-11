@@ -18,9 +18,9 @@ public class ReportService {
         this.workoutService = workoutService;
     }
 
-    public DailyReportDto getDailyReport(UserTelegram user) {
-        List<Meal> meals = mealService.getMealsForToday(user);
-        List<WorkoutSession> workouts = workoutService.getWorkoutsForToday(user);
+    public DailyReportDto getReportForDate(UserTelegram user, java.time.LocalDate date) {
+        List<Meal> meals = mealService.getMealsForDate(user, date);
+        List<WorkoutSession> workouts = workoutService.getWorkoutsForDate(user, date);
 
         int totalCal = 0;
         double totalProt = 0;
@@ -28,10 +28,10 @@ public class ReportService {
         double totalFat = 0;
 
         for (Meal meal : meals) {
-            totalCal += meal.getCalories();
-            totalProt += meal.getProtein();
-            totalCarb += meal.getCarbs();
-            totalFat += meal.getFat();
+            totalCal += meal.getCalories() != null ? meal.getCalories() : 0;
+            totalProt += meal.getProtein() != null ? meal.getProtein() : 0;
+            totalCarb += meal.getCarbs() != null ? meal.getCarbs() : 0;
+            totalFat += meal.getFat() != null ? meal.getFat() : 0;
         }
 
         return DailyReportDto.builder()
@@ -43,5 +43,9 @@ public class ReportService {
                 .totalFat(totalFat)
                 .user(user)
                 .build();
+    }
+
+    public DailyReportDto getDailyReport(UserTelegram user) {
+        return getReportForDate(user, java.time.LocalDate.now());
     }
 }

@@ -100,7 +100,8 @@ public class FitnessBot extends TelegramLongPollingBot {
                             registrarTreino(user, descricao, null, chatId);
                         }
                     } else if (text.startsWith("/relatorio")) {
-                        gerarRelatorio(user, chatId);
+                        String arg = text.replace("/relatorio", "").trim();
+                        gerarRelatorio(user, arg, chatId);
                     } else {
                         enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /meta ou /relatorio.");
                     }
@@ -174,14 +175,40 @@ public class FitnessBot extends TelegramLongPollingBot {
         }
     }
 
-    private void gerarRelatorio(UserTelegram user, long chatId) {
+    private void gerarRelatorio(UserTelegram user, String arg, long chatId) {
         try {
-            DailyReportDto report = reportService.getDailyReport(user);
-            enviarMensagemMarkdown(chatId, messageFormatter.formatDailyReport(report));
+            java.time.LocalDate date = java.time.LocalDate.now();
+            if (!arg.isEmpty()) {
+                if ("ontem".equalsIgnoreCase(arg)) {
+                    date = date.minusDays(1);
+                } else {
+                    date = parseDate(arg);
+                    if (date == null) {
+                        enviarMensagem(chatId, "⚠️ Formato de data inválido! Use /relatorio, /relatorio ontem, ou /relatorio DD/MM/AAAA.");
+                        return;
+                    }
+                }
+            }
+            DailyReportDto report = reportService.getReportForDate(user, date);
+            enviarMensagemMarkdown(chatId, messageFormatter.formatDailyReport(report, date));
         } catch (Exception e) {
             e.printStackTrace();
             enviarMensagem(chatId, "Ocorreu um erro ao gerar o relatório.");
         }
+    }
+
+    private java.time.LocalDate parseDate(String input) {
+        try {
+            if (input.matches("\\d{2}/\\d{2}/\\d{4}")) {
+                return java.time.LocalDate.parse(input, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            } else if (input.matches("\\d{2}/\\d{2}")) {
+                String fullDate = input + "/" + java.time.LocalDate.now().getYear();
+                return java.time.LocalDate.parse(fullDate, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            }
+        } catch (Exception e) {
+            // Ignora erro de parsing e retorna null
+        }
+        return null;
     }
 
     private byte[] obterBytesDoAudio(String fileId) {

@@ -93,10 +93,14 @@ public class WorkoutService {
         }
     }
 
-    public List<WorkoutSession> getWorkoutsForToday(UserTelegram user) {
-        LocalDateTime start = LocalDateTime.now().with(java.time.LocalTime.MIN);
-        LocalDateTime end = LocalDateTime.now().with(java.time.LocalTime.MAX);
+    public List<WorkoutSession> getWorkoutsForDate(UserTelegram user, java.time.LocalDate date) {
+        LocalDateTime start = date.atStartOfDay();
+        LocalDateTime end = date.atTime(java.time.LocalTime.MAX);
         return workoutRepository.findByUserAndCreatedAtBetween(user, start, end);
+    }
+
+    public List<WorkoutSession> getWorkoutsForToday(UserTelegram user) {
+        return getWorkoutsForDate(user, java.time.LocalDate.now());
     }
 
     private String serializeExercises(List<WorkoutDto.ExerciseDto> exercises) {

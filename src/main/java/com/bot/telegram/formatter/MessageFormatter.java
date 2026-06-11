@@ -89,6 +89,10 @@ public class MessageFormatter {
     }
 
     public String formatDailyReport(DailyReportDto report) {
+        return formatDailyReport(report, java.time.LocalDate.now());
+    }
+
+    public String formatDailyReport(DailyReportDto report, java.time.LocalDate date) {
         StringBuilder mealsList = new StringBuilder();
         int mealIdx = 1;
         for (Meal meal : report.getMeals()) {
@@ -170,18 +174,28 @@ public class MessageFormatter {
         }
 
         UserTelegram user = report.getUser();
-        int targetCal = user.getTargetCalories() > 0 ? user.getTargetCalories() : 2000;
-        int targetProt = user.getTargetProtein() > 0 ? user.getTargetProtein() : 150;
-        int targetCarb = user.getTargetCarbs() > 0 ? user.getTargetCarbs() : 200;
-        int targetFat = user.getTargetFat() > 0 ? user.getTargetFat() : 60;
+        int targetCal = (user.getTargetCalories() != null && user.getTargetCalories() > 0) ? user.getTargetCalories() : 2000;
+        int targetProt = (user.getTargetProtein() != null && user.getTargetProtein() > 0) ? user.getTargetProtein() : 150;
+        int targetCarb = (user.getTargetCarbs() != null && user.getTargetCarbs() > 0) ? user.getTargetCarbs() : 200;
+        int targetFat = (user.getTargetFat() != null && user.getTargetFat() > 0) ? user.getTargetFat() : 60;
 
         int totalCal = report.getTotalCalories();
         double totalProt = report.getTotalProtein();
         double totalCarb = report.getTotalCarbs();
         double totalFat = report.getTotalFat();
 
+        java.time.LocalDate today = java.time.LocalDate.now();
+        String dateHeader;
+        if (date.equals(today)) {
+            dateHeader = "HOJE";
+        } else if (date.equals(today.minusDays(1))) {
+            dateHeader = "ONTEM";
+        } else {
+            dateHeader = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        }
+
         return String.format(
-                "### 📆 RELATÓRIO DO DIA\n\n" +
+                "### 📆 RELATÓRIO DE %s\n\n" +
                 "#### 🥗 REFEIÇÕES\n%s\n\n" +
                 "#### 🏋️‍♂️ TREINOS\n%s\n\n" +
                 "#### 📊 TOTAIS VS. METAS\n\n" +
@@ -190,6 +204,7 @@ public class MessageFormatter {
                 "| *Proteínas* | %s / %dg\n" +
                 "| *Carbos* | %s / %dg\n" +
                 "| *Gorduras* | %s / %dg",
+                dateHeader,
                 mealsList.toString().trim(),
                 workoutsList.toString().trim(),
                 totalCal, targetCal,
