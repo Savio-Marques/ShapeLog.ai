@@ -32,7 +32,6 @@ public class FitnessBot extends TelegramLongPollingBot {
             String mensagemRecebida = update.getMessage().getText();
             long chatId = update.getMessage().getChatId();
 
-            // Teste inicial: Echo (responde o que recebeu)
             enviarMensagem(chatId, "Recebido: " + mensagemRecebida);
         }
     }
