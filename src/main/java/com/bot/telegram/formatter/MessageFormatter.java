@@ -25,16 +25,6 @@ public class MessageFormatter {
                 "📊 `/relatorio` - Exibe o progresso diário";
     }
 
-    public String StringformatGoalsUpdated(int cal, int prot, int carb, int fat) {
-        return String.format(
-                "🎯 *Metas Diárias Atualizadas!*\n" +
-                "🔥 *Calorias:* %d kcal\n" +
-                "💪 *Proteínas:* %dg\n" +
-                "🍞 *Carboidratos:* %dg\n" +
-                "🥑 *Gorduras:* %dg",
-                cal, prot, carb, fat
-        );
-    }
 
     public String formatGoalsUpdated(int cal, int prot, int carb, int fat) {
         return String.format(
@@ -49,10 +39,10 @@ public class MessageFormatter {
 
     public String formatMealRegistered(Meal meal) {
         return String.format(
-                "### ✅ Refeição Registrada!\n\n" +
+                "✅ *Refeição Registrada!*\n\n" +
                 "🥗 *Itens:* %s\n" +
                 "📊 *Macros:* `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg",
-                meal.getDescription(),
+                meal.getDescription() != null ? meal.getDescription() : "sem descrição",
                 meal.getCalories() != null ? meal.getCalories() : 0,
                 formatDouble(meal.getProtein()),
                 formatDouble(meal.getCarbs()),
@@ -63,8 +53,8 @@ public class MessageFormatter {
     public String formatWorkoutRegistered(WorkoutSession session) {
         List<WorkoutDto.ExerciseDto> exercises = deserializeExercises(session.getExercisesJson());
         StringBuilder sb = new StringBuilder();
-        sb.append("### 🏋️‍♂️ Treino Registrado\n\n");
-        
+        sb.append("🏋️\u200d♂️ *Treino Registrado*\n\n");
+
         String desc = (session.getDescription() == null || session.getDescription().trim().isEmpty()) ? "Geral" : session.getDescription().trim();
         sb.append("*Treino:* ").append(desc).append("\n\n");
 
@@ -195,15 +185,14 @@ public class MessageFormatter {
         }
 
         return String.format(
-                "### 📆 RELATÓRIO DE %s\n\n" +
-                "#### 🥗 REFEIÇÕES\n%s\n\n" +
-                "#### 🏋️‍♂️ TREINOS\n%s\n\n" +
-                "#### 📊 TOTAIS VS. METAS\n\n" +
-                "| Macronutriente | Consumido / Meta\n" +
-                "| *Calorias* | %d / %d kcal\n" +
-                "| *Proteínas* | %s / %dg\n" +
-                "| *Carbos* | %s / %dg\n" +
-                "| *Gorduras* | %s / %dg",
+                "📆 *RELATÓRIO DE %s*\n\n" +
+                "🥗 *REFEIÇÕES*\n%s\n\n" +
+                "🏋️\u200d♂️ *TREINOS*\n%s\n\n" +
+                "📊 *TOTAIS VS. METAS*\n" +
+                "*Calorias:* %d / %d kcal\n" +
+                "*Proteínas:* %s / %dg\n" +
+                "*Carbos:* %s / %dg\n" +
+                "*Gorduras:* %s / %dg",
                 dateHeader,
                 mealsList.toString().trim(),
                 workoutsList.toString().trim(),

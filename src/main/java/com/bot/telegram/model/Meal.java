@@ -36,4 +36,8 @@ public class Meal {
     private Double fat;
 
     private LocalDateTime createdAt;
+
+    private Integer userMessageId;
+
+    private Integer botMessageId;
 }

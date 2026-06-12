@@ -33,4 +33,8 @@ public class WorkoutSession {
     private String exercisesJson;
 
     private LocalDateTime createdAt;
+
+    private Integer userMessageId;
+
+    private Integer botMessageId;
 }

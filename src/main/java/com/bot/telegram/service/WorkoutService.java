@@ -6,6 +6,7 @@ import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.repository.WorkoutSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,6 +23,11 @@ public class WorkoutService {
     }
 
     public WorkoutSession registerWorkout(UserTelegram user, String text, byte[] audioBytes) {
+        return registerWorkout(user, text, audioBytes, null);
+    }
+
+    @Transactional
+    public WorkoutSession registerWorkout(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
         
         List<WorkoutSession> todaySessions = getWorkoutsForToday(user);
@@ -77,21 +83,54 @@ public class WorkoutService {
             String existingRaw = existingSession.getRawInput() != null ? existingSession.getRawInput() : "";
             String newRaw = text != null ? text : "[Mensagem de Voz]";
             existingSession.setRawInput(existingRaw + " | " + newRaw);
+            existingSession.setUserMessageId(userMessageId);
             
             return workoutRepository.save(existingSession);
         } else {
             WorkoutSession session = WorkoutSession.builder()
                     .user(user)
                     .rawInput(text != null ? text : "[Mensagem de Voz]")
-                    .description(dto.getDescription())
-                    .durationMinutes(dto.getDurationMinutes())
-                    .exercisesJson(serializeExercises(dto.getExercises()))
+                    .description(dto.getDescription() != null ? dto.getDescription() : "Geral")
+                    .durationMinutes(dto.getDurationMinutes() != null ? dto.getDurationMinutes() : 0)
+                    .exercisesJson(serializeExercises(dto.getExercises() != null ? dto.getExercises() : java.util.List.of()))
+                    .userMessageId(userMessageId)
                     .createdAt(LocalDateTime.now())
                     .build();
                 
             return workoutRepository.save(session);
         }
     }
+
+    public WorkoutSession updateWorkout(Long workoutId, String text, byte[] audioBytes) {
+        WorkoutSession session = workoutRepository.findById(workoutId)
+                .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
+        
+        WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
+        
+        session.setRawInput(text != null ? text : "[Mensagem de Voz]");
+        session.setDescription(dto.getDescription() != null ? dto.getDescription() : "Geral");
+        session.setDurationMinutes(dto.getDurationMinutes() != null ? dto.getDurationMinutes() : 0);
+        session.setExercisesJson(serializeExercises(dto.getExercises() != null ? dto.getExercises() : java.util.List.of()));
+
+        return workoutRepository.save(session);
+    }
+
+    public void saveBotMessageId(Long workoutId, Integer botMessageId) {
+        workoutRepository.findById(workoutId).ifPresent(session -> {
+            session.setBotMessageId(botMessageId);
+            workoutRepository.save(session);
+        });
+    }
+
+    public void deleteWorkout(Long workoutId) {
+        workoutRepository.deleteById(workoutId);
+    }
+
+    // Item 7: verificar existência antes de deletar para tratar duplo clique graciosamente
+    public boolean existeWorkout(Long workoutId) {
+        return workoutRepository.existsById(workoutId);
+    }
+
 
     public List<WorkoutSession> getWorkoutsForDate(UserTelegram user, java.time.LocalDate date) {
         LocalDateTime start = date.atStartOfDay();

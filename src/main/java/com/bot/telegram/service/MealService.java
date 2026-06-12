@@ -20,21 +20,59 @@ public class MealService {
     }
 
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes) {
+        return registerMeal(user, text, audioBytes, null);
+    }
+
+    public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
         MealDto dto = geminiService.parseMeal(text, audioBytes);
         
         Meal meal = Meal.builder()
                 .user(user)
                 .rawInput(text != null ? text : "[Mensagem de Voz]")
-                .description(dto.getDescription())
-                .calories(dto.getCalories())
-                .protein(dto.getProtein())
-                .carbs(dto.getCarbs())
-                .fat(dto.getFat())
+                .description(dto.getDescription() != null ? dto.getDescription() : "sem descrição")
+                .calories(dto.getCalories() != null ? dto.getCalories() : 0)
+                .protein(dto.getProtein() != null ? dto.getProtein() : 0.0)
+                .carbs(dto.getCarbs() != null ? dto.getCarbs() : 0.0)
+                .fat(dto.getFat() != null ? dto.getFat() : 0.0)
+                .userMessageId(userMessageId)
                 .createdAt(LocalDateTime.now())
                 .build();
         
         return mealRepository.save(meal);
     }
+
+    public Meal updateMeal(Long mealId, String text, byte[] audioBytes) {
+        Meal meal = mealRepository.findById(mealId)
+                .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));
+        
+        MealDto dto = geminiService.parseMeal(text, audioBytes);
+        
+        meal.setRawInput(text != null ? text : "[Mensagem de Voz]");
+        meal.setDescription(dto.getDescription() != null ? dto.getDescription() : "sem descrição");
+        meal.setCalories(dto.getCalories() != null ? dto.getCalories() : 0);
+        meal.setProtein(dto.getProtein() != null ? dto.getProtein() : 0.0);
+        meal.setCarbs(dto.getCarbs() != null ? dto.getCarbs() : 0.0);
+        meal.setFat(dto.getFat() != null ? dto.getFat() : 0.0);
+        
+        return mealRepository.save(meal);
+    }
+
+    public void saveBotMessageId(Long mealId, Integer botMessageId) {
+        mealRepository.findById(mealId).ifPresent(meal -> {
+            meal.setBotMessageId(botMessageId);
+            mealRepository.save(meal);
+        });
+    }
+
+    public void deleteMeal(Long mealId) {
+        mealRepository.deleteById(mealId);
+    }
+
+    // Item 7: verificar existência antes de deletar para tratar duplo clique graciosamente
+    public boolean existeMeal(Long mealId) {
+        return mealRepository.existsById(mealId);
+    }
+
 
     public List<Meal> getMealsForDate(UserTelegram user, java.time.LocalDate date) {
         LocalDateTime start = date.atStartOfDay();

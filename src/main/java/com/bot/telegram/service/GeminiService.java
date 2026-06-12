@@ -23,11 +23,22 @@ public class GeminiService {
     }
 
     public MealDto parseMeal(String text, byte[] audioBytes) {
+        // Item 4: validar se há algum conteúdo antes de chamar a API
+        if ((text == null || text.isBlank()) && (audioBytes == null || audioBytes.length == 0)) {
+            throw new IllegalArgumentException("Nenhum conteúdo para analisar. Envie um texto ou áudio válido.");
+        }
         if (audioBytes != null && audioBytes.length > 0) {
             ByteArrayResource resource = new ByteArrayResource(audioBytes);
             Media media = new Media(MimeType.valueOf("audio/ogg"), resource);
             UserMessage userMessage = UserMessage.builder()
-                .text("Analise o áudio em anexo contendo o relato da refeição consumida. Extraia os alimentos e estime as calorias, carboidratos (carbs), proteínas (protein) e gorduras (fat) em gramas. Na descrição (description), liste apenas os alimentos em letras minúsculas separados por vírgula (ex: 'uma maçã média, 4 bananas'). Retorne no formato estruturado.")
+                .text("Analise o áudio em anexo contendo o relato da refeição consumida. " +
+                      "Extraia os alimentos e estime os macronutrientes. " +
+                      "Retorne um JSON com exatamente estes campos: " +
+                      "\"description\" (liste cada alimento com sua quantidade e unidade em letras minúsculas separados por vírgula, ex: '1 pão francês, 4 ovos mexidos, 1 fatia de queijo coalho'), " +
+                      "\"calories\" (total de calorias como número inteiro), " +
+                      "\"protein\" (proteínas em gramas como decimal), " +
+                      "\"carbs\" (carboidratos em gramas como decimal), " +
+                      "\"fat\" (gorduras em gramas como decimal).")
                 .media(media)
                 .build();
             return chatClient.prompt(new Prompt(userMessage))
@@ -37,8 +48,12 @@ public class GeminiService {
             return chatClient.prompt()
                 .user(u -> u.text("""
                     Analise a refeição informada: "{text}".
-                    Estime a quantidade total de calorias (cal), carboidratos (carbs), proteínas (protein) e gorduras (fat) em gramas de forma proporcional.
-                    Na descrição (description), liste apenas os alimentos em letras minúsculas separados por vírgula (ex: 'uma maçã média, 4 bananas').
+                    Estime os macronutrientes e retorne um JSON com exatamente estes campos:
+                    - description: liste cada alimento com sua quantidade e unidade em letras minúsculas separados por vírgula (ex: '1 pão francês, 4 ovos mexidos, 1 fatia de queijo coalho')
+                    - calories: total de calorias como número inteiro
+                    - protein: proteínas em gramas como decimal
+                    - carbs: carboidratos em gramas como decimal
+                    - fat: gorduras em gramas como decimal
                     """)
                     .param("text", text))
                 .call()
@@ -47,6 +62,10 @@ public class GeminiService {
     }
 
     public WorkoutDto parseWorkout(String text, byte[] audioBytes) {
+        // Item 4: validar se há algum conteúdo antes de chamar a API
+        if ((text == null || text.isBlank()) && (audioBytes == null || audioBytes.length == 0)) {
+            throw new IllegalArgumentException("Nenhum conteúdo para analisar. Envie um texto ou áudio válido.");
+        }
         if (audioBytes != null && audioBytes.length > 0) {
             ByteArrayResource resource = new ByteArrayResource(audioBytes);
             Media media = new Media(MimeType.valueOf("audio/ogg"), resource);
