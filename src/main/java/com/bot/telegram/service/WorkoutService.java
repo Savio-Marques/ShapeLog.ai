@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class WorkoutService {
@@ -17,104 +18,102 @@ public class WorkoutService {
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
 
-    public WorkoutService(WorkoutSessionRepository workoutRepository, GeminiService geminiService, ObjectMapper objectMapper) {
-        this.workoutRepository = workoutRepository;
+    public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper) {
         this.geminiService = geminiService;
+        this.workoutRepository = workoutRepository;
         this.objectMapper = objectMapper;
     }
 
-    public WorkoutSession registerWorkout(UserTelegram user, String text, byte[] audioBytes) {
-        return registerWorkout(user, text, audioBytes, null);
-    }
-
-    @Transactional
-    public WorkoutSession registerWorkout(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
-        WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
-        
-        List<WorkoutSession> todaySessions = getWorkoutsForToday(user);
-        if (!todaySessions.isEmpty()) {
-            WorkoutSession existingSession = todaySessions.get(0);
-            
-            // 1. Merge description if new one is specific (not null, not empty, and not "Geral")
-            if (dto.getDescription() != null && !dto.getDescription().trim().isEmpty() && !"Geral".equalsIgnoreCase(dto.getDescription().trim())) {
-                existingSession.setDescription(dto.getDescription().trim());
-            } else if (existingSession.getDescription() == null || existingSession.getDescription().trim().isEmpty() || "Geral".equalsIgnoreCase(existingSession.getDescription().trim())) {
-                if (dto.getDescription() != null && !dto.getDescription().trim().isEmpty()) {
-                    existingSession.setDescription(dto.getDescription().trim());
-                }
-            }
-            
-            // 2. Add duration
-            if (dto.getDurationMinutes() != null) {
-                int existingDuration = existingSession.getDurationMinutes() != null ? existingSession.getDurationMinutes() : 0;
-                existingSession.setDurationMinutes(existingDuration + dto.getDurationMinutes());
-            }
-            
-            // 3. Merge exercises
-            List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(existingSession.getExercisesJson());
-            if (dto.getExercises() != null) {
-                for (WorkoutDto.ExerciseDto newEx : dto.getExercises()) {
-                    WorkoutDto.ExerciseDto match = null;
-                    for (WorkoutDto.ExerciseDto ex : existingExercises) {
-                        if (ex.getName() != null && newEx.getName() != null && ex.getName().trim().equalsIgnoreCase(newEx.getName().trim())) {
-                            match = ex;
-                            break;
-                        }
-                    }
-                    if (match != null) {
-                        List<WorkoutDto.SeriesDto> matchSeries = match.getSeries();
-                        if (matchSeries == null) {
-                            matchSeries = new java.util.ArrayList<>();
-                            match.setSeries(matchSeries);
-                        } else {
-                            matchSeries = new java.util.ArrayList<>(matchSeries);
-                            match.setSeries(matchSeries);
-                        }
-                        if (newEx.getSeries() != null) {
-                            matchSeries.addAll(newEx.getSeries());
-                        }
-                    } else {
-                        existingExercises.add(newEx);
-                    }
-                }
-            }
-            
-            existingSession.setExercisesJson(serializeExercises(existingExercises));
-            
-            String existingRaw = existingSession.getRawInput() != null ? existingSession.getRawInput() : "";
-            String newRaw = text != null ? text : "[Mensagem de Voz]";
-            existingSession.setRawInput(existingRaw + " | " + newRaw);
-            existingSession.setUserMessageId(userMessageId);
-            
-            return workoutRepository.save(existingSession);
-        } else {
-            WorkoutSession session = WorkoutSession.builder()
-                    .user(user)
-                    .rawInput(text != null ? text : "[Mensagem de Voz]")
-                    .description(dto.getDescription() != null ? dto.getDescription() : "Geral")
-                    .durationMinutes(dto.getDurationMinutes() != null ? dto.getDurationMinutes() : 0)
-                    .exercisesJson(serializeExercises(dto.getExercises() != null ? dto.getExercises() : java.util.List.of()))
-                    .userMessageId(userMessageId)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-                
-            return workoutRepository.save(session);
+    public static class WorkoutUpdateResult {
+        public final WorkoutSession session;
+        public final int startIndex;
+        public final List<WorkoutDto.ExerciseDto> addedExercises;
+        public WorkoutUpdateResult(WorkoutSession session, int startIndex, List<WorkoutDto.ExerciseDto> addedExercises) {
+            this.session = session;
+            this.startIndex = startIndex;
+            this.addedExercises = addedExercises;
         }
     }
 
-    public WorkoutSession updateWorkout(Long workoutId, String text, byte[] audioBytes) {
+    @Transactional
+    public WorkoutSession createOrUpdateDraftWorkout(UserTelegram user, String title, Integer userMessageId) {
+        Optional<WorkoutSession> optLatest = getLatestWorkoutForToday(user);
+        WorkoutSession session;
+        if (optLatest.isPresent()) {
+            session = optLatest.get();
+            session.setRawInput(title != null ? title : "Treino");
+            if (userMessageId != null) {
+                session.setUserMessageId(userMessageId);
+            }
+        } else {
+            session = WorkoutSession.builder()
+                    .user(user)
+                    .rawInput(title != null ? title : "Treino")
+                    .exercisesJson("[]")
+                    .createdAt(LocalDateTime.now())
+                    .userMessageId(userMessageId)
+                    .build();
+        }
+        return workoutRepository.save(session);
+    }
+
+    @Transactional
+    public WorkoutUpdateResult addExercisesToDraft(Long workoutId, String text, byte[] audioBytes, Integer userMessageId) {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
         
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
         
-        session.setRawInput(text != null ? text : "[Mensagem de Voz]");
-        session.setDescription(dto.getDescription() != null ? dto.getDescription() : "Geral");
-        session.setDurationMinutes(dto.getDurationMinutes() != null ? dto.getDurationMinutes() : 0);
-        session.setExercisesJson(serializeExercises(dto.getExercises() != null ? dto.getExercises() : java.util.List.of()));
+        if (dto.getDurationMinutes() != null) {
+            int existingDuration = session.getDurationMinutes() != null ? session.getDurationMinutes() : 0;
+            session.setDurationMinutes(existingDuration + dto.getDurationMinutes());
+        }
+        
+        List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
+        int startIndex = existingExercises.size();
+        List<WorkoutDto.ExerciseDto> added = dto.getExercises() != null ? dto.getExercises() : java.util.List.of();
+        existingExercises.addAll(added);
+        session.setExercisesJson(serializeExercises(existingExercises));
+        
+        if (userMessageId != null) {
+            session.setUserMessageId(userMessageId);
+        }
+        
+        return new WorkoutUpdateResult(workoutRepository.save(session), startIndex, added);
+    }
 
+    @Transactional
+    public WorkoutSession editExercise(Long workoutId, int exerciseIndex, String text, byte[] audioBytes) {
+        WorkoutSession session = workoutRepository.findById(workoutId)
+                .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
+        
+        WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
+        List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
+        
+        if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
+            if (dto.getExercises() != null && !dto.getExercises().isEmpty()) {
+                // Substitui apenas o exercício alvo pelo primeiro exercício retornado pelo Gemini
+                existingExercises.set(exerciseIndex, dto.getExercises().get(0));
+            }
+        }
+        session.setExercisesJson(serializeExercises(existingExercises));
         return workoutRepository.save(session);
     }
+
+    @Transactional
+    public WorkoutSession removeExercise(Long workoutId, int exerciseIndex) {
+        WorkoutSession session = workoutRepository.findById(workoutId)
+                .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
+        
+        List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
+        if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
+            existingExercises.remove(exerciseIndex);
+        }
+        session.setExercisesJson(serializeExercises(existingExercises));
+        return workoutRepository.save(session);
+    }
+
+    // O método updateWorkout antigo pode ser removido, pois usaremos editExercise
 
     public void saveBotMessageId(Long workoutId, Integer botMessageId) {
         workoutRepository.findById(workoutId).ifPresent(session -> {
@@ -139,6 +138,12 @@ public class WorkoutService {
         return workoutRepository.findByUserAndCreatedAtBetween(user, start, end);
     }
 
+    public Optional<WorkoutSession> getLatestWorkoutForToday(UserTelegram user) {
+        LocalDateTime start = java.time.LocalDate.now().atStartOfDay();
+        LocalDateTime end = java.time.LocalDate.now().atTime(java.time.LocalTime.MAX);
+        return workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(user, start, end);
+    }
+
     public List<WorkoutSession> getWorkoutsForToday(UserTelegram user) {
         return getWorkoutsForDate(user, java.time.LocalDate.now());
     }
@@ -151,7 +156,7 @@ public class WorkoutService {
         }
     }
 
-    private List<WorkoutDto.ExerciseDto> deserializeExercises(String json) {
+    public List<WorkoutDto.ExerciseDto> deserializeExercises(String json) {
         try {
             if (json == null || json.trim().isEmpty()) {
                 return new java.util.ArrayList<>();

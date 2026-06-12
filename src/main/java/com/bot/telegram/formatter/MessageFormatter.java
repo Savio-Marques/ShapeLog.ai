@@ -25,6 +25,14 @@ public class MessageFormatter {
         this.objectMapper = objectMapper;
     }
 
+    private String escapeMarkdown(String text) {
+        if (text == null) return "";
+        return text.replace("_", "\\_")
+                   .replace("*", "\\*")
+                   .replace("`", "\\`")
+                   .replace("[", "\\[");
+    }
+
     public String formatStart(String firstName) {
         return "👋 Olá, *" + firstName + "*! Bem-vindo ao *ShapeLog.ai*.\n\n" +
                 "Aqui você pode registrar sua alimentação e treinos diários por texto ou áudio!\n\n" +
@@ -51,7 +59,7 @@ public class MessageFormatter {
                 "✅ *Refeição Registrada!*\n\n" +
                 "🥗 *Itens:* %s\n" +
                 "📊 *Macros:* `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg",
-                meal.getDescription() != null ? meal.getDescription() : "sem descrição",
+                meal.getDescription() != null ? escapeMarkdown(meal.getDescription()) : "sem descrição",
                 meal.getCalories() != null ? meal.getCalories() : 0,
                 formatDouble(meal.getProtein()),
                 formatDouble(meal.getCarbs()),
@@ -64,12 +72,12 @@ public class MessageFormatter {
         StringBuilder sb = new StringBuilder();
         sb.append("🏋️\u200d♂️ *Treino Registrado*\n\n");
 
-        String desc = (session.getDescription() == null || session.getDescription().trim().isEmpty()) ? "Geral" : session.getDescription().trim();
+        String desc = session.getDescription() != null ? escapeMarkdown(session.getDescription()) : "Geral";
         sb.append("*Treino:* ").append(desc).append("\n\n");
 
         if (exercises != null) {
             for (WorkoutDto.ExerciseDto ex : exercises) {
-                sb.append("*").append(ex.getName()).append(":*\n");
+                sb.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
                 List<WorkoutDto.SeriesDto> series = ex.getSeries();
                 if (series != null) {
                     for (int i = 0; i < series.size(); i++) {
@@ -87,6 +95,30 @@ public class MessageFormatter {
         return sb.toString().trim();
     }
 
+    public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises) {
+        if (exercises == null || exercises.isEmpty()) {
+            return "Nenhum exercício reconhecido.";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("✅ *Exercício Registrado*\n\n");
+        for (WorkoutDto.ExerciseDto ex : exercises) {
+            sb.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
+            List<WorkoutDto.SeriesDto> series = ex.getSeries();
+            if (series != null) {
+                for (int i = 0; i < series.size(); i++) {
+                    WorkoutDto.SeriesDto s = series.get(i);
+                    sb.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                            (i + 1),
+                            s.getReps() != null ? s.getReps() : 0,
+                            formatWeight(s.getWeight())
+                    ));
+                }
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
     public String formatDailyReport(DailyReportDto report) {
         return formatDailyReport(report, java.time.LocalDate.now());
     }
@@ -96,7 +128,7 @@ public class MessageFormatter {
         StringBuilder mealsList = new StringBuilder();
         int mealIdx = 1;
         for (Meal meal : report.getMeals()) {
-            mealsList.append(String.format("• *Refeição %d:* %s\n", mealIdx++, meal.getDescription()));
+            mealsList.append(String.format("• *Refeição %d:* %s\n", mealIdx++, escapeMarkdown(meal.getDescription())));
             mealsList.append(String.format("  └ `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg\n\n",
                     meal.getCalories() != null ? meal.getCalories() : 0,
                     formatDouble(meal.getProtein()),
@@ -108,26 +140,34 @@ public class MessageFormatter {
             mealsList.append("Nenhuma refeição registrada hoje.\n");
         }
 
-        // — Treinos: usa dados já processados pelo ReportService (L3) —
+        // — Treinos —
         StringBuilder workoutsList = new StringBuilder();
-        List<ExerciseSummaryDto> mergedExercises = report.getMergedExercises();
-        if (mergedExercises == null || mergedExercises.isEmpty()) {
+        if (report.getWorkouts() == null || report.getWorkouts().isEmpty()) {
             workoutsList.append("Nenhum treino registrado hoje.\n");
         } else {
-            workoutsList.append("*Treino:* ").append(report.getWorkoutDescription()).append("\n\n");
-            for (ExerciseSummaryDto ex : mergedExercises) {
-                workoutsList.append("*").append(ex.getName()).append(":*\n");
-                if (ex.getSeries() != null) {
-                    for (int i = 0; i < ex.getSeries().size(); i++) {
-                        var s = ex.getSeries().get(i);
-                        workoutsList.append(String.format("\\* %dª série: %d reps — %s kg\n",
-                                (i + 1),
-                                s.getReps() != null ? s.getReps() : 0,
-                                formatWeight(s.getWeight())
-                        ));
+            for (WorkoutSession workout : report.getWorkouts()) {
+                workoutsList.append("Treino: ").append(escapeMarkdown(workout.getRawInput() != null && !workout.getRawInput().startsWith("[") ? workout.getRawInput() : "Treino")).append("\n\n");
+                
+                try {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    WorkoutDto.ExerciseDto[] exs = mapper.readValue(workout.getExercisesJson(), WorkoutDto.ExerciseDto[].class);
+                    for (WorkoutDto.ExerciseDto ex : exs) {
+                        workoutsList.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
+                        if (ex.getSeries() != null) {
+                            for (int i = 0; i < ex.getSeries().size(); i++) {
+                                var s = ex.getSeries().get(i);
+                                workoutsList.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                                        (i + 1),
+                                        s.getReps() != null ? s.getReps() : 0,
+                                        formatWeight(s.getWeight())
+                                ));
+                            }
+                        }
+                        workoutsList.append("\n");
                     }
+                } catch (Exception e) {
+                    workoutsList.append("_(Erro ao ler exercícios)_\n\n");
                 }
-                workoutsList.append("\n");
             }
         }
 

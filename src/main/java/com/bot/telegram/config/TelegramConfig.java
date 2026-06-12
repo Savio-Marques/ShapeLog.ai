@@ -11,6 +11,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
 @Configuration
+@org.springframework.scheduling.annotation.EnableScheduling
 public class TelegramConfig {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramConfig.class);

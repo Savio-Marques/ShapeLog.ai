@@ -12,4 +12,5 @@ import java.util.Optional;
 @Repository
 public interface WorkoutSessionRepository extends JpaRepository<WorkoutSession, Long> {
     List<WorkoutSession> findByUserAndCreatedAtBetween(UserTelegram user, LocalDateTime start, LocalDateTime end);
+    Optional<WorkoutSession> findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(UserTelegram user, LocalDateTime start, LocalDateTime end);
 }

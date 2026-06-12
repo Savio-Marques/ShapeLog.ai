@@ -43,6 +43,25 @@ public class InlineKeyboardFactory {
         return markup;
     }
 
+    public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, int startIndex, int count) {
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            int idx = startIndex + i;
+            InlineKeyboardButton btnEdit = new InlineKeyboardButton();
+            btnEdit.setText("✏️ Editar" + (count > 1 ? " " + (i+1) : ""));
+            btnEdit.setCallbackData("edit_ex:" + workoutId + ":" + idx);
+
+            InlineKeyboardButton btnDel = new InlineKeyboardButton();
+            btnDel.setText("❌ Excluir" + (count > 1 ? " " + (i+1) : ""));
+            btnDel.setCallbackData("delete_ex:" + workoutId + ":" + idx);
+            
+            keyboard.add(List.of(btnEdit, btnDel));
+        }
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(keyboard);
+        return markup;
+    }
+
     public InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report) {
         List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
 

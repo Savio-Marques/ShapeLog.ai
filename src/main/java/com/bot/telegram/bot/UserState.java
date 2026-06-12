@@ -3,9 +3,11 @@ package com.bot.telegram.bot;
 public enum UserState {
 
     AWAITING_MEAL,
-    AWAITING_WORKOUT,
+    AWAITING_WORKOUT_TITLE,
+    AWAITING_EXERCISE,
     AWAITING_EDIT_MEAL,
-    AWAITING_EDIT_WORKOUT;
+    AWAITING_EDIT_WORKOUT,
+    AWAITING_EDIT_EXERCISE;
 
     public String serialize() {
         return this.name();
@@ -13,6 +15,10 @@ public enum UserState {
 
     public String withId(long id) {
         return this.name() + ":" + id;
+    }
+
+    public String withPayload(String payload) {
+        return this.name() + ":" + payload;
     }
 
     public static UserState from(String raw) {
@@ -32,5 +38,10 @@ public enum UserState {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    public static String extractPayload(String raw) {
+        if (raw == null || !raw.contains(":")) return null;
+        return raw.substring(raw.indexOf(":") + 1);
     }
 }

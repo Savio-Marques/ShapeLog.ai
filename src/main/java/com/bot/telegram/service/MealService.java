@@ -7,6 +7,7 @@ import com.bot.telegram.repository.MealRepository;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MealService {
@@ -23,6 +24,7 @@ public class MealService {
         return registerMeal(user, text, audioBytes, null);
     }
 
+    @Transactional
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
         MealDto dto = geminiService.parseMeal(text, audioBytes);
         
@@ -41,6 +43,7 @@ public class MealService {
         return mealRepository.save(meal);
     }
 
+    @Transactional
     public Meal updateMeal(Long mealId, String text, byte[] audioBytes) {
         Meal meal = mealRepository.findById(mealId)
                 .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));
