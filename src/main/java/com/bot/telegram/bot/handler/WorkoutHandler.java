@@ -1,5 +1,4 @@
 package com.bot.telegram.bot.handler;
-
 import com.bot.telegram.bot.BotActionSender;
 import com.bot.telegram.bot.keyboard.InlineKeyboardFactory;
 import com.bot.telegram.formatter.MessageFormatter;
@@ -15,7 +14,6 @@ import org.telegram.telegrambots.meta.api.objects.Message;
 public class WorkoutHandler {
 
     private static final Logger log = LoggerFactory.getLogger(WorkoutHandler.class);
-
     private final WorkoutService workoutService;
     private final MessageFormatter messageFormatter;
     private final InlineKeyboardFactory keyboardFactory;
@@ -30,7 +28,6 @@ public class WorkoutHandler {
         try {
             boolean jaExistia = workoutService.getLatestWorkoutForToday(user).isPresent();
             WorkoutSession draft = workoutService.createOrUpdateDraftWorkout(user, titulo, userMessageId);
-            
             if (jaExistia) {
                 sender.enviarMensagem(chatId, "✏️ Título do treino atualizado para '" + titulo + "'!");
             } else {
@@ -61,8 +58,6 @@ public class WorkoutHandler {
         try {
             sender.enviarMensagem(chatId, "Atualizando exercício... ");
             WorkoutSession session = workoutService.editExercise(workoutId, exerciseIndex, text, audioBytes);
-            
-            // Re-formata apenas o exercício alterado para mostrar ao usuário o resultado
             java.util.List<com.bot.telegram.dto.WorkoutDto.ExerciseDto> allEx = workoutService.deserializeExercises(session.getExercisesJson());
             if (exerciseIndex >= 0 && exerciseIndex < allEx.size()) {
                 String formattedText = messageFormatter.formatExercisesAdded(java.util.List.of(allEx.get(exerciseIndex)));

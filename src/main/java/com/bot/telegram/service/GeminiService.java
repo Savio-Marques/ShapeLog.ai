@@ -1,5 +1,4 @@
 package com.bot.telegram.service;
-
 import com.bot.telegram.dto.MealDto;
 import com.bot.telegram.dto.WorkoutDto;
 import org.springframework.ai.chat.client.ChatClient;
@@ -10,8 +9,6 @@ import org.springframework.ai.content.Media;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
-
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -25,7 +22,6 @@ public class GeminiService {
     }
 
     public MealDto parseMeal(String text, byte[] audioBytes) {
-        // Item 4: validar se há algum conteúdo antes de chamar a API
         if ((text == null || text.isBlank()) && (audioBytes == null || audioBytes.length == 0)) {
             throw new IllegalArgumentException("Nenhum conteúdo para analisar. Envie um texto ou áudio válido.");
         }
@@ -74,7 +70,6 @@ public class GeminiService {
     }
 
     public WorkoutDto parseWorkout(String text, byte[] audioBytes) {
-        // Item 4: validar se há algum conteúdo antes de chamar a API
         if ((text == null || text.isBlank()) && (audioBytes == null || audioBytes.length == 0)) {
             throw new IllegalArgumentException("Nenhum conteúdo para analisar. Envie um texto ou áudio válido.");
         }

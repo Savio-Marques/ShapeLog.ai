@@ -1,5 +1,4 @@
 package com.bot.telegram.config;
-
 import com.bot.telegram.bot.FitnessBot;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -16,10 +15,6 @@ public class TelegramConfig {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramConfig.class);
 
-    /**
-     * M2: ObjectMapper como bean Spring compartilhado — thread-safe após configurado,
-     * evita instanciar um por classe (WorkoutService, MessageFormatter, ReportService).
-     */
     @Bean
     public ObjectMapper objectMapper() {
         return new ObjectMapper();
@@ -27,7 +22,6 @@ public class TelegramConfig {
 
     @Bean
     public TelegramBotsApi telegramBotsApi(FitnessBot fitnessBot) throws TelegramApiException {
-        // M1: exceção propagada — se o registro falhar (token inválido, rede), a aplicação falha ao subir com log claro
         log.info("Registrando bot no Telegram...");
         TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
         botsApi.registerBot(fitnessBot);

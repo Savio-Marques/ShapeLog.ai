@@ -15,7 +15,6 @@ import org.telegram.telegrambots.meta.api.objects.Message;
 public class MealHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MealHandler.class);
-
     private final MealService mealService;
     private final MessageFormatter messageFormatter;
     private final InlineKeyboardFactory keyboardFactory;

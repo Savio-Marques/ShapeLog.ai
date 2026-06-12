@@ -1,5 +1,4 @@
 package com.bot.telegram.dto;
-
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.WorkoutSession;
 import com.bot.telegram.model.UserTelegram;
@@ -10,6 +9,7 @@ import java.util.List;
 @Getter
 @Builder
 public class DailyReportDto {
+
     private List<Meal> meals;
     private List<WorkoutSession> workouts;
     private Integer totalCalories;
@@ -17,9 +17,6 @@ public class DailyReportDto {
     private Double totalCarbs;
     private Double totalFat;
     private UserTelegram user;
-
-    // L3: dados de treino já processados pelo ReportService,
-    // prontos para exibição direta pelo MessageFormatter (sem lógica de negócio no formatter)
     private List<ExerciseSummaryDto> mergedExercises;
     private String workoutDescription;
 
@@ -28,7 +25,6 @@ public class DailyReportDto {
     public static class ExerciseSummaryDto {
         private String name;
         private List<SeriesSummaryDto> series;
-
         @Getter
         @Builder
         public static class SeriesSummaryDto {

@@ -1,14 +1,10 @@
 package com.bot.telegram.model;
-
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "workout_sessions", indexes = {
-    @Index(name = "idx_workout_user_created", columnList = "user_id, createdAt")
-})
+@Table(name = "workout_sessions", indexes = {@Index(name = "idx_workout_user_created", columnList = "user_id, createdAt")})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -37,6 +33,5 @@ public class WorkoutSession {
     private LocalDateTime createdAt;
 
     private Integer userMessageId;
-
     private Integer botMessageId;
 }

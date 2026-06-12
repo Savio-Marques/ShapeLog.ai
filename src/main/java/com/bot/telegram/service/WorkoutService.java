@@ -1,5 +1,4 @@
 package com.bot.telegram.service;
-
 import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.WorkoutSession;
 import com.bot.telegram.model.UserTelegram;
@@ -12,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Service
-public class WorkoutService {
+public class WorkoutService implements IWorkoutService {
 
     private final WorkoutSessionRepository workoutRepository;
     private final GeminiService geminiService;
@@ -61,24 +60,19 @@ public class WorkoutService {
     public WorkoutUpdateResult addExercisesToDraft(Long workoutId, String text, byte[] audioBytes, Integer userMessageId) {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
-        
         if (dto.getDurationMinutes() != null) {
             int existingDuration = session.getDurationMinutes() != null ? session.getDurationMinutes() : 0;
             session.setDurationMinutes(existingDuration + dto.getDurationMinutes());
         }
-        
         List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
         int startIndex = existingExercises.size();
         List<WorkoutDto.ExerciseDto> added = dto.getExercises() != null ? dto.getExercises() : java.util.List.of();
         existingExercises.addAll(added);
         session.setExercisesJson(serializeExercises(existingExercises));
-        
         if (userMessageId != null) {
             session.setUserMessageId(userMessageId);
         }
-        
         return new WorkoutUpdateResult(workoutRepository.save(session), startIndex, added);
     }
 
@@ -86,13 +80,10 @@ public class WorkoutService {
     public WorkoutSession editExercise(Long workoutId, int exerciseIndex, String text, byte[] audioBytes) {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
         List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
-        
         if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
             if (dto.getExercises() != null && !dto.getExercises().isEmpty()) {
-                // Substitui apenas o exercício alvo pelo primeiro exercício retornado pelo Gemini
                 existingExercises.set(exerciseIndex, dto.getExercises().get(0));
             }
         }
@@ -104,7 +95,6 @@ public class WorkoutService {
     public WorkoutSession removeExercise(Long workoutId, int exerciseIndex) {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        
         List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
         if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
             existingExercises.remove(exerciseIndex);
@@ -113,8 +103,7 @@ public class WorkoutService {
         return workoutRepository.save(session);
     }
 
-    // O método updateWorkout antigo pode ser removido, pois usaremos editExercise
-
+    @Transactional
     public void saveBotMessageId(Long workoutId, Integer botMessageId) {
         workoutRepository.findById(workoutId).ifPresent(session -> {
             session.setBotMessageId(botMessageId);
@@ -126,16 +115,18 @@ public class WorkoutService {
         workoutRepository.deleteById(workoutId);
     }
 
-    // Item 7: verificar existência antes de deletar para tratar duplo clique graciosamente
+    public Optional<WorkoutSession> findById(Long workoutId) {
+        return workoutRepository.findById(workoutId);
+    }
+
     public boolean existeWorkout(Long workoutId) {
         return workoutRepository.existsById(workoutId);
     }
 
-
     public List<WorkoutSession> getWorkoutsForDate(UserTelegram user, java.time.LocalDate date) {
         LocalDateTime start = date.atStartOfDay();
         LocalDateTime end = date.atTime(java.time.LocalTime.MAX);
-        return workoutRepository.findByUserAndCreatedAtBetween(user, start, end);
+        return workoutRepository.findByUserAndCreatedAtBetweenOrderByIdAsc(user, start, end);
     }
 
     public Optional<WorkoutSession> getLatestWorkoutForToday(UserTelegram user) {

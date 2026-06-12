@@ -1,5 +1,4 @@
 package com.bot.telegram.bot.handler;
-
 import com.bot.telegram.bot.BotActionSender;
 import com.bot.telegram.bot.keyboard.InlineKeyboardFactory;
 import com.bot.telegram.dto.DailyReportDto;
@@ -14,7 +13,6 @@ import org.springframework.stereotype.Component;
 public class ReportHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ReportHandler.class);
-
     private final ReportService reportService;
     private final MessageFormatter messageFormatter;
     private final InlineKeyboardFactory keyboardFactory;
@@ -57,7 +55,6 @@ public class ReportHandler {
                 return java.time.LocalDate.parse(fullDate, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
             }
         } catch (Exception e) {
-            // Ignora erro de parsing e retorna null
         }
         return null;
     }

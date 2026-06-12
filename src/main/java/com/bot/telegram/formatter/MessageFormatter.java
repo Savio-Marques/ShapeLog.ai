@@ -1,36 +1,44 @@
 package com.bot.telegram.formatter;
-
 import com.bot.telegram.dto.DailyReportDto;
 import com.bot.telegram.dto.DailyReportDto.ExerciseSummaryDto;
 import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.model.WorkoutSession;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.bot.telegram.service.IWorkoutService;
 import org.springframework.stereotype.Component;
-
 import java.util.List;
 
-/**
- * Responsável exclusivamente por formatar dados em strings para o Telegram.
- * Não contém lógica de negócio — recebe dados já processados e apenas os apresenta.
- */
 @Component
 public class MessageFormatter {
 
-    private final ObjectMapper objectMapper;
+    private final IWorkoutService workoutService;
 
-    public MessageFormatter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public MessageFormatter(IWorkoutService workoutService) {
+        this.workoutService = workoutService;
     }
 
     private String escapeMarkdown(String text) {
         if (text == null) return "";
-        return text.replace("_", "\\_")
+        return text.replace("\\", "\\\\")  
+                   .replace("_", "\\_")
                    .replace("*", "\\*")
                    .replace("`", "\\`")
-                   .replace("[", "\\[");
+                   .replace("[", "\\[")
+                   .replace("]", "\\]")
+                   .replace("(", "\\(")
+                   .replace(")", "\\)")
+                   .replace("~", "\\~")
+                   .replace(">", "\\>")
+                   .replace("#", "\\#")
+                   .replace("+", "\\+")
+                   .replace("-", "\\-")
+                   .replace("=", "\\=")
+                   .replace("|", "\\|")
+                   .replace("{", "\\{")
+                   .replace("}", "\\}")
+                   .replace(".", "\\.")
+                   .replace("!", "\\!");
     }
 
     public String formatStart(String firstName) {
@@ -68,13 +76,11 @@ public class MessageFormatter {
     }
 
     public String formatWorkoutRegistered(WorkoutSession session) {
-        List<WorkoutDto.ExerciseDto> exercises = deserializeExercises(session.getExercisesJson());
+        List<WorkoutDto.ExerciseDto> exercises = workoutService.deserializeExercises(session.getExercisesJson());
         StringBuilder sb = new StringBuilder();
         sb.append("🏋️\u200d♂️ *Treino Registrado*\n\n");
-
         String desc = session.getDescription() != null ? escapeMarkdown(session.getDescription()) : "Geral";
         sb.append("*Treino:* ").append(desc).append("\n\n");
-
         if (exercises != null) {
             for (WorkoutDto.ExerciseDto ex : exercises) {
                 sb.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
@@ -82,7 +88,7 @@ public class MessageFormatter {
                 if (series != null) {
                     for (int i = 0; i < series.size(); i++) {
                         WorkoutDto.SeriesDto s = series.get(i);
-                        sb.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                        sb.append(String.format("\\* %dª série: %d reps - %s kg\n",
                                 (i + 1),
                                 s.getReps() != null ? s.getReps() : 0,
                                 formatWeight(s.getWeight())
@@ -107,7 +113,7 @@ public class MessageFormatter {
             if (series != null) {
                 for (int i = 0; i < series.size(); i++) {
                     WorkoutDto.SeriesDto s = series.get(i);
-                    sb.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                    sb.append(String.format("\\* %dª série: %d reps - %s kg\n",
                             (i + 1),
                             s.getReps() != null ? s.getReps() : 0,
                             formatWeight(s.getWeight())
@@ -124,7 +130,6 @@ public class MessageFormatter {
     }
 
     public String formatDailyReport(DailyReportDto report, java.time.LocalDate date) {
-        // — Refeições —
         StringBuilder mealsList = new StringBuilder();
         int mealIdx = 1;
         for (Meal meal : report.getMeals()) {
@@ -139,24 +144,29 @@ public class MessageFormatter {
         if (report.getMeals().isEmpty()) {
             mealsList.append("Nenhuma refeição registrada hoje.\n");
         }
-
-        // — Treinos —
         StringBuilder workoutsList = new StringBuilder();
         if (report.getWorkouts() == null || report.getWorkouts().isEmpty()) {
             workoutsList.append("Nenhum treino registrado hoje.\n");
         } else {
             for (WorkoutSession workout : report.getWorkouts()) {
-                workoutsList.append("Treino: ").append(escapeMarkdown(workout.getRawInput() != null && !workout.getRawInput().startsWith("[") ? workout.getRawInput() : "Treino")).append("\n\n");
-                
+                String titulo = workout.getRawInput();
+                if (titulo == null || titulo.isBlank() || titulo.startsWith("[")) {
+                    titulo = "Treino";
+                }
+                workoutsList.append("Treino: ").append(escapeMarkdown(titulo)).append("\n\n");
+                String json = workout.getExercisesJson();
+                if (json == null || json.isBlank() || json.equals("[]")) {
+                    workoutsList.append("_(Nenhum exercício registrado ainda)_\n\n");
+                    continue;
+                }
                 try {
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    WorkoutDto.ExerciseDto[] exs = mapper.readValue(workout.getExercisesJson(), WorkoutDto.ExerciseDto[].class);
+                    List<WorkoutDto.ExerciseDto> exs = workoutService.deserializeExercises(json);
                     for (WorkoutDto.ExerciseDto ex : exs) {
                         workoutsList.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
                         if (ex.getSeries() != null) {
                             for (int i = 0; i < ex.getSeries().size(); i++) {
                                 var s = ex.getSeries().get(i);
-                                workoutsList.append(String.format("\\* %dª série: %d reps — %s kg\n",
+                                workoutsList.append(String.format("\\* %dª série: %d reps - %s kg\n",
                                         (i + 1),
                                         s.getReps() != null ? s.getReps() : 0,
                                         formatWeight(s.getWeight())
@@ -171,15 +181,14 @@ public class MessageFormatter {
             }
         }
 
-        // — Totais vs. metas —
         UserTelegram user = report.getUser();
         int targetCal  = (user.getTargetCalories() != null && user.getTargetCalories() > 0) ? user.getTargetCalories() : 2000;
         int targetProt = (user.getTargetProtein()  != null && user.getTargetProtein()  > 0) ? user.getTargetProtein()  : 150;
         int targetCarb = (user.getTargetCarbs()    != null && user.getTargetCarbs()    > 0) ? user.getTargetCarbs()    : 200;
         int targetFat  = (user.getTargetFat()      != null && user.getTargetFat()      > 0) ? user.getTargetFat()      : 60;
-
         java.time.LocalDate today = java.time.LocalDate.now();
         String dateHeader;
+
         if (date.equals(today)) {
             dateHeader = "HOJE";
         } else if (date.equals(today.minusDays(1))) {
@@ -187,7 +196,6 @@ public class MessageFormatter {
         } else {
             dateHeader = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         }
-
         return String.format(
                 "📆 *RELATÓRIO DE %s*\n\n" +
                 "🥗 *REFEIÇÕES*\n%s\n\n" +
@@ -218,13 +226,5 @@ public class MessageFormatter {
             return String.format("%d", value.longValue());
         }
         return String.format("%.1f", value).replace('.', ',');
-    }
-
-    private List<WorkoutDto.ExerciseDto> deserializeExercises(String json) {
-        try {
-            return objectMapper.readValue(json, new TypeReference<List<WorkoutDto.ExerciseDto>>() {});
-        } catch (Exception e) {
-            return List.of();
-        }
     }
 }

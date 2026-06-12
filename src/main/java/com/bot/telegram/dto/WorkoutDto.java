@@ -1,5 +1,4 @@
 package com.bot.telegram.dto;
-
 import lombok.*;
 import java.util.List;
 
@@ -8,6 +7,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class WorkoutDto {
+
     private String description;
     private Integer durationMinutes;
     private List<ExerciseDto> exercises;

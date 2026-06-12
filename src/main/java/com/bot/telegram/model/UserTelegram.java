@@ -1,10 +1,8 @@
 package com.bot.telegram.model;
-
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.*;
-
 import java.time.LocalDateTime;
 
 @Entity
@@ -17,19 +15,13 @@ import java.time.LocalDateTime;
 public class UserTelegram {
 
     @Id
-    private Long id; // Chat ID do Telegram
+    private Long id;
 
     private String username;
-    
     private String firstName;
-
     private Integer targetCalories;
-
     private Integer targetProtein;
-
     private Integer targetCarbs;
-
     private Integer targetFat;
-
     private LocalDateTime registeredAt;
 }

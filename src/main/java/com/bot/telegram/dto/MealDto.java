@@ -1,5 +1,4 @@
 package com.bot.telegram.dto;
-
 import lombok.*;
 
 @Data

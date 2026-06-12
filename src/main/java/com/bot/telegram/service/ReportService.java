@@ -1,5 +1,4 @@
 package com.bot.telegram.service;
-
 import com.bot.telegram.dto.DailyReportDto;
 import com.bot.telegram.dto.DailyReportDto.ExerciseSummaryDto;
 import com.bot.telegram.dto.DailyReportDto.ExerciseSummaryDto.SeriesSummaryDto;
@@ -10,7 +9,6 @@ import com.bot.telegram.model.UserTelegram;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,27 +24,21 @@ public class ReportService {
         this.workoutService = workoutService;
         this.objectMapper = objectMapper;
     }
-
     public DailyReportDto getReportForDate(UserTelegram user, java.time.LocalDate date) {
         List<Meal> meals = mealService.getMealsForDate(user, date);
         List<WorkoutSession> workouts = workoutService.getWorkoutsForDate(user, date);
-
         Integer totalCal = 0;
         Double totalProt = 0.0;
         Double totalCarb = 0.0;
         Double totalFat = 0.0;
-
         for (Meal meal : meals) {
             totalCal += meal.getCalories() != null ? meal.getCalories() : 0;
             totalProt += meal.getProtein() != null ? meal.getProtein() : 0;
             totalCarb += meal.getCarbs() != null ? meal.getCarbs() : 0;
             totalFat += meal.getFat() != null ? meal.getFat() : 0;
         }
-
-        // L3: lógica de merge de exercícios movida para cá — o MessageFormatter receberá dados prontos
         String workoutDescription = resolveWorkoutDescription(workouts);
         List<ExerciseSummaryDto> mergedExercises = mergeExercises(workouts);
-
         return DailyReportDto.builder()
                 .meals(meals)
                 .workouts(workouts)
@@ -64,14 +56,12 @@ public class ReportService {
         return getReportForDate(user, java.time.LocalDate.now());
     }
 
-    /**
-     * Determina a melhor descrição de treino a partir de múltiplas sessões do dia.
-     * Prioriza descrições específicas sobre as genéricas ("Geral", "Treino").
-     */
     private String resolveWorkoutDescription(List<WorkoutSession> workouts) {
         String bestDesc = "Geral";
         for (WorkoutSession w : workouts) {
-            String desc = w.getDescription();
+            String desc = w.getRawInput() != null && !w.getRawInput().startsWith("[")
+                    ? w.getRawInput()
+                    : w.getDescription();
             if (desc == null || desc.trim().isEmpty()) continue;
             String trimmed = desc.trim();
             boolean isGeneric = "Geral".equalsIgnoreCase(trimmed) || "Treino".equalsIgnoreCase(trimmed);
@@ -83,13 +73,8 @@ public class ReportService {
         return bestDesc;
     }
 
-    /**
-     * Agrega todos os exercícios de múltiplas sessões do dia,
-     * mesclando séries de exercícios com o mesmo nome (case-insensitive).
-     */
     private List<ExerciseSummaryDto> mergeExercises(List<WorkoutSession> workouts) {
         List<ExerciseSummaryDto> merged = new ArrayList<>();
-
         for (WorkoutSession w : workouts) {
             List<WorkoutDto.ExerciseDto> exercises = deserializeExercises(w.getExercisesJson());
             for (WorkoutDto.ExerciseDto newEx : exercises) {
@@ -98,9 +83,7 @@ public class ReportService {
                                 && e.getName().trim().equalsIgnoreCase(newEx.getName().trim()))
                         .findFirst()
                         .orElse(null);
-
                 if (match != null) {
-                    // Exercício já existe: acumular séries
                     List<SeriesSummaryDto> allSeries = new ArrayList<>(match.getSeries());
                     if (newEx.getSeries() != null) {
                         for (WorkoutDto.SeriesDto s : newEx.getSeries()) {
@@ -110,13 +93,11 @@ public class ReportService {
                                     .build());
                         }
                     }
-                    // Reconstruir com a lista atualizada (ExerciseSummaryDto é imutável pelo @Builder)
                     merged.set(merged.indexOf(match), ExerciseSummaryDto.builder()
                             .name(match.getName())
                             .series(allSeries)
                             .build());
                 } else {
-                    // Novo exercício
                     List<SeriesSummaryDto> series = new ArrayList<>();
                     if (newEx.getSeries() != null) {
                         for (WorkoutDto.SeriesDto s : newEx.getSeries()) {

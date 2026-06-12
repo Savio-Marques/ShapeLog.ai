@@ -30,7 +30,6 @@ public enum UserState {
             return null;
         }
     }
-
     public static Long extractId(String raw) {
         if (raw == null || !raw.contains(":")) return null;
         try {
@@ -39,7 +38,6 @@ public enum UserState {
             return null;
         }
     }
-
     public static String extractPayload(String raw) {
         if (raw == null || !raw.contains(":")) return null;
         return raw.substring(raw.indexOf(":") + 1);

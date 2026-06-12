@@ -1,21 +1,17 @@
 package com.bot.telegram.model;
-
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "meals", indexes = {
-    @Index(name = "idx_meal_user_created", columnList = "user_id, createdAt")
-})
+@Table(name = "meals", indexes = {@Index(name = "idx_meal_user_created", columnList = "user_id, createdAt")})
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Meal {
 
+public class Meal {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -30,16 +26,12 @@ public class Meal {
     private String description;
 
     private Integer calories;
-
     private Double protein;
-
     private Double carbs;
-
     private Double fat;
 
     private LocalDateTime createdAt;
 
     private Integer userMessageId;
-
     private Integer botMessageId;
 }
