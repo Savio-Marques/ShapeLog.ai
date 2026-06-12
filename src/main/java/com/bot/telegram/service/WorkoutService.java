@@ -15,11 +15,12 @@ public class WorkoutService {
 
     private final WorkoutSessionRepository workoutRepository;
     private final GeminiService geminiService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
-    public WorkoutService(WorkoutSessionRepository workoutRepository, GeminiService geminiService) {
+    public WorkoutService(WorkoutSessionRepository workoutRepository, GeminiService geminiService, ObjectMapper objectMapper) {
         this.workoutRepository = workoutRepository;
         this.geminiService = geminiService;
+        this.objectMapper = objectMapper;
     }
 
     public WorkoutSession registerWorkout(UserTelegram user, String text, byte[] audioBytes) {

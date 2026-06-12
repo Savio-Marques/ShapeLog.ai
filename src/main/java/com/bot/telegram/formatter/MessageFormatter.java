@@ -1,6 +1,7 @@
 package com.bot.telegram.formatter;
 
 import com.bot.telegram.dto.DailyReportDto;
+import com.bot.telegram.dto.DailyReportDto.ExerciseSummaryDto;
 import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
@@ -8,12 +9,21 @@ import com.bot.telegram.model.WorkoutSession;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
+
 import java.util.List;
 
+/**
+ * Responsável exclusivamente por formatar dados em strings para o Telegram.
+ * Não contém lógica de negócio — recebe dados já processados e apenas os apresenta.
+ */
 @Component
 public class MessageFormatter {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+
+    public MessageFormatter(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     public String formatStart(String firstName) {
         return "👋 Olá, *" + firstName + "*! Bem-vindo ao *ShapeLog.ai*.\n\n" +
@@ -24,7 +34,6 @@ public class MessageFormatter {
                 "🎯 `/meta <calorias> <proteinas> <carbos> <gorduras>` - Define metas\n" +
                 "📊 `/relatorio` - Exibe o progresso diário";
     }
-
 
     public String formatGoalsUpdated(int cal, int prot, int carb, int fat) {
         return String.format(
@@ -83,6 +92,7 @@ public class MessageFormatter {
     }
 
     public String formatDailyReport(DailyReportDto report, java.time.LocalDate date) {
+        // — Refeições —
         StringBuilder mealsList = new StringBuilder();
         int mealIdx = 1;
         for (Meal meal : report.getMeals()) {
@@ -98,60 +108,18 @@ public class MessageFormatter {
             mealsList.append("Nenhuma refeição registrada hoje.\n");
         }
 
+        // — Treinos: usa dados já processados pelo ReportService (L3) —
         StringBuilder workoutsList = new StringBuilder();
-        List<WorkoutDto.ExerciseDto> allExercises = new java.util.ArrayList<>();
-        String bestDesc = "Geral";
-
-        for (WorkoutSession w : report.getWorkouts()) {
-            String desc = w.getDescription();
-            if (desc != null && !desc.trim().isEmpty() && !"Geral".equalsIgnoreCase(desc.trim()) && !"Treino".equalsIgnoreCase(desc.trim())) {
-                bestDesc = desc.trim();
-            } else if (("Geral".equals(bestDesc) || "Treino".equals(bestDesc)) && desc != null && !desc.trim().isEmpty()) {
-                bestDesc = desc.trim();
-            }
-
-            List<WorkoutDto.ExerciseDto> exercises = deserializeExercises(w.getExercisesJson());
-            if (exercises != null) {
-                allExercises.addAll(exercises);
-            }
-        }
-
-        List<WorkoutDto.ExerciseDto> uniqueExercises = new java.util.ArrayList<>();
-        for (WorkoutDto.ExerciseDto newEx : allExercises) {
-            WorkoutDto.ExerciseDto match = null;
-            for (WorkoutDto.ExerciseDto ex : uniqueExercises) {
-                if (ex.getName() != null && newEx.getName() != null && ex.getName().trim().equalsIgnoreCase(newEx.getName().trim())) {
-                    match = ex;
-                    break;
-                }
-            }
-            if (match != null) {
-                List<WorkoutDto.SeriesDto> matchSeries = match.getSeries();
-                if (matchSeries == null) {
-                    matchSeries = new java.util.ArrayList<>();
-                    match.setSeries(matchSeries);
-                } else {
-                    matchSeries = new java.util.ArrayList<>(matchSeries);
-                    match.setSeries(matchSeries);
-                }
-                if (newEx.getSeries() != null) {
-                    matchSeries.addAll(newEx.getSeries());
-                }
-            } else {
-                uniqueExercises.add(newEx);
-            }
-        }
-
-        if (uniqueExercises.isEmpty()) {
+        List<ExerciseSummaryDto> mergedExercises = report.getMergedExercises();
+        if (mergedExercises == null || mergedExercises.isEmpty()) {
             workoutsList.append("Nenhum treino registrado hoje.\n");
         } else {
-            workoutsList.append("*Treino:* ").append(bestDesc).append("\n\n");
-            for (WorkoutDto.ExerciseDto ex : uniqueExercises) {
+            workoutsList.append("*Treino:* ").append(report.getWorkoutDescription()).append("\n\n");
+            for (ExerciseSummaryDto ex : mergedExercises) {
                 workoutsList.append("*").append(ex.getName()).append(":*\n");
-                List<WorkoutDto.SeriesDto> series = ex.getSeries();
-                if (series != null) {
-                    for (int i = 0; i < series.size(); i++) {
-                        WorkoutDto.SeriesDto s = series.get(i);
+                if (ex.getSeries() != null) {
+                    for (int i = 0; i < ex.getSeries().size(); i++) {
+                        var s = ex.getSeries().get(i);
                         workoutsList.append(String.format("\\* %dª série: %d reps — %s kg\n",
                                 (i + 1),
                                 s.getReps() != null ? s.getReps() : 0,
@@ -163,16 +131,12 @@ public class MessageFormatter {
             }
         }
 
+        // — Totais vs. metas —
         UserTelegram user = report.getUser();
-        int targetCal = (user.getTargetCalories() != null && user.getTargetCalories() > 0) ? user.getTargetCalories() : 2000;
-        int targetProt = (user.getTargetProtein() != null && user.getTargetProtein() > 0) ? user.getTargetProtein() : 150;
-        int targetCarb = (user.getTargetCarbs() != null && user.getTargetCarbs() > 0) ? user.getTargetCarbs() : 200;
-        int targetFat = (user.getTargetFat() != null && user.getTargetFat() > 0) ? user.getTargetFat() : 60;
-
-        int totalCal = report.getTotalCalories();
-        double totalProt = report.getTotalProtein();
-        double totalCarb = report.getTotalCarbs();
-        double totalFat = report.getTotalFat();
+        int targetCal  = (user.getTargetCalories() != null && user.getTargetCalories() > 0) ? user.getTargetCalories() : 2000;
+        int targetProt = (user.getTargetProtein()  != null && user.getTargetProtein()  > 0) ? user.getTargetProtein()  : 150;
+        int targetCarb = (user.getTargetCarbs()    != null && user.getTargetCarbs()    > 0) ? user.getTargetCarbs()    : 200;
+        int targetFat  = (user.getTargetFat()      != null && user.getTargetFat()      > 0) ? user.getTargetFat()      : 60;
 
         java.time.LocalDate today = java.time.LocalDate.now();
         String dateHeader;
@@ -196,10 +160,10 @@ public class MessageFormatter {
                 dateHeader,
                 mealsList.toString().trim(),
                 workoutsList.toString().trim(),
-                totalCal, targetCal,
-                formatDouble(totalProt), targetProt,
-                formatDouble(totalCarb), targetCarb,
-                formatDouble(totalFat), targetFat
+                report.getTotalCalories(), targetCal,
+                formatDouble(report.getTotalProtein()), targetProt,
+                formatDouble(report.getTotalCarbs()), targetCarb,
+                formatDouble(report.getTotalFat()), targetFat
         );
     }
 

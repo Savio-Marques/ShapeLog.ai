@@ -64,8 +64,6 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     @Override
     public String getBotToken() { return this.botToken; }
 
-    // --- Helpers de estado com TTL ---
-
     private void putState(long chatId, String state) {
         userStates.put(chatId, state);
         userStateTimes.put(chatId, System.currentTimeMillis());
@@ -88,7 +86,6 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public void onUpdateReceived(Update update) {
-        // Item 2: chatId extraído no escopo externo para poder avisar o usuário em caso de erro inesperado
         Long chatId = null;
         try {
             if (update.hasCallbackQuery()) {
@@ -130,7 +127,7 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                         } else if (text.startsWith("/refeicao")) {
                             String descricao = text.replace("/refeicao", "").trim();
                             if (descricao.isEmpty()) {
-                                putState(chatId, "AWAITING_MEAL");
+                                putState(chatId, UserState.AWAITING_MEAL.serialize());
                                 enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto sua refeição agora!");
                             } else {
                                 mealHandler.registrarRefeicao(user, descricao, null, update.getMessage().getMessageId(), chatId, this);
@@ -138,7 +135,7 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                         } else if (text.startsWith("/treino")) {
                             String descricao = text.replace("/treino", "").trim();
                             if (descricao.isEmpty()) {
-                                putState(chatId, "AWAITING_WORKOUT");
+                                putState(chatId, UserState.AWAITING_WORKOUT.serialize());
                                 enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto seu treino agora!");
                             } else {
                                 workoutHandler.registrarTreino(user, descricao, null, update.getMessage().getMessageId(), chatId, this);
@@ -150,18 +147,19 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                             enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /meta ou /relatorio.");
                         }
                     } else {
-                        String state = getState(chatId);
+                        UserState state = UserState.from(getState(chatId));
+                        String rawState = getState(chatId);
                         if (state != null) {
                             removeState(chatId);
-                            if ("AWAITING_MEAL".equals(state)) {
+                            if (state == UserState.AWAITING_MEAL) {
                                 mealHandler.registrarRefeicao(user, text, null, update.getMessage().getMessageId(), chatId, this);
-                            } else if ("AWAITING_WORKOUT".equals(state)) {
+                            } else if (state == UserState.AWAITING_WORKOUT) {
                                 workoutHandler.registrarTreino(user, text, null, update.getMessage().getMessageId(), chatId, this);
-                            } else if (state.startsWith("AWAITING_EDIT_MEAL:")) {
-                                Long mealId = Long.parseLong(state.split(":")[1]);
+                            } else if (state == UserState.AWAITING_EDIT_MEAL) {
+                                Long mealId = UserState.extractId(rawState);
                                 mealHandler.atualizarRefeicaoEditada(mealId, text, null, chatId, this);
-                            } else if (state.startsWith("AWAITING_EDIT_WORKOUT:")) {
-                                Long workoutId = Long.parseLong(state.split(":")[1]);
+                            } else if (state == UserState.AWAITING_EDIT_WORKOUT) {
+                                Long workoutId = UserState.extractId(rawState);
                                 workoutHandler.atualizarTreinoEditado(workoutId, text, null, chatId, this);
                             }
                         } else {
@@ -169,28 +167,30 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                         }
                     }
 
+
                 } else if (update.getMessage().hasVoice()) {
                     Voice voice = update.getMessage().getVoice();
-                    String state = getState(chatId);
-                    if (state != null) {
+                    String rawVoiceState = getState(chatId);
+                    UserState voiceState = UserState.from(rawVoiceState);
+                    if (voiceState != null) {
                         removeState(chatId);
 
-                        // Item 1: verificar se o download do áudio foi bem-sucedido antes de prosseguir
+                        // verificar se o download do áudio foi bem-sucedido antes de prosseguir
                         byte[] audioBytes = obterBytesDoAudio(voice.getFileId());
                         if (audioBytes == null) {
                             enviarMensagem(chatId, "❌ Não foi possível baixar o áudio. Tente reenviar ou descreva em texto.");
                             return;
                         }
 
-                        if ("AWAITING_MEAL".equals(state)) {
+                        if (voiceState == UserState.AWAITING_MEAL) {
                             mealHandler.registrarRefeicao(user, null, audioBytes, update.getMessage().getMessageId(), chatId, this);
-                        } else if ("AWAITING_WORKOUT".equals(state)) {
+                        } else if (voiceState == UserState.AWAITING_WORKOUT) {
                             workoutHandler.registrarTreino(user, null, audioBytes, update.getMessage().getMessageId(), chatId, this);
-                        } else if (state.startsWith("AWAITING_EDIT_MEAL:")) {
-                            Long mealId = Long.parseLong(state.split(":")[1]);
+                        } else if (voiceState == UserState.AWAITING_EDIT_MEAL) {
+                            Long mealId = UserState.extractId(rawVoiceState);
                             mealHandler.atualizarRefeicaoEditada(mealId, null, audioBytes, chatId, this);
-                        } else if (state.startsWith("AWAITING_EDIT_WORKOUT:")) {
-                            Long workoutId = Long.parseLong(state.split(":")[1]);
+                        } else if (voiceState == UserState.AWAITING_EDIT_WORKOUT) {
+                            Long workoutId = UserState.extractId(rawVoiceState);
                             workoutHandler.atualizarTreinoEditado(workoutId, null, audioBytes, chatId, this);
                         }
                     } else {
@@ -200,7 +200,6 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
             }
 
         } catch (Exception e) {
-            // catch global — captura erros inesperados (ex: banco fora do ar, NullPointerException)
             log.error("Erro inesperado ao processar update do chatId={}", chatId, e);
             if (chatId != null) {
                 String errMsg = resolverMensagemDeErro(e);
@@ -240,7 +239,7 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
             return bytes;
         } catch (Exception e) {
             log.error("Erro ao baixar áudio fileId={}", fileId, e);
-            return null; // caller verifica null (Item 1)
+            return null;
         }
     }
 
@@ -292,11 +291,11 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                 workoutHandler.processarExclusaoTreino(workoutId, botMessageId, chatId, this);
             } else if (data.startsWith("edit_meal:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
-                putState(chatId, "AWAITING_EDIT_MEAL:" + mealId);
+                putState(chatId, UserState.AWAITING_EDIT_MEAL.withId(mealId));
                 enviarMensagem(chatId, "✏️ Envie um texto ou grave um áudio com o novo conteúdo para esta refeição.");
             } else if (data.startsWith("edit_workout:")) {
                 Long workoutId = Long.parseLong(data.split(":")[1]);
-                putState(chatId, "AWAITING_EDIT_WORKOUT:" + workoutId);
+                putState(chatId, UserState.AWAITING_EDIT_WORKOUT.withId(workoutId));
                 enviarMensagem(chatId, "✏️ Envie um texto ou grave um áudio com o novo conteúdo para este treino.");
             }
         } catch (Exception e) {

@@ -17,4 +17,23 @@ public class DailyReportDto {
     private double totalCarbs;
     private double totalFat;
     private UserTelegram user;
+
+    // L3: dados de treino já processados pelo ReportService,
+    // prontos para exibição direta pelo MessageFormatter (sem lógica de negócio no formatter)
+    private List<ExerciseSummaryDto> mergedExercises;
+    private String workoutDescription;
+
+    @Getter
+    @Builder
+    public static class ExerciseSummaryDto {
+        private String name;
+        private List<SeriesSummaryDto> series;
+
+        @Getter
+        @Builder
+        public static class SeriesSummaryDto {
+            private Integer reps;
+            private Double weight;
+        }
+    }
 }
