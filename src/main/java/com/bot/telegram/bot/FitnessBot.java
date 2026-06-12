@@ -9,6 +9,8 @@ import com.bot.telegram.service.MealService;
 import com.bot.telegram.service.ReportService;
 import com.bot.telegram.service.UserService;
 import com.bot.telegram.service.WorkoutService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -27,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class FitnessBot extends TelegramLongPollingBot {
+
+    private static final Logger log = LoggerFactory.getLogger(FitnessBot.class);
 
     @Value("${telegram.bot.username}")
     private String botUsername;
@@ -196,8 +200,8 @@ public class FitnessBot extends TelegramLongPollingBot {
             }
 
         } catch (Exception e) {
-            // Item 2: catch global — captura erros inesperados (ex: banco fora do ar, NullPointerException)
-            e.printStackTrace();
+            // catch global — captura erros inesperados (ex: banco fora do ar, NullPointerException)
+            log.error("Erro inesperado ao processar update do chatId={}", chatId, e);
             if (chatId != null) {
                 String errMsg = resolverMensagemDeErro(e);
                 enviarMensagem(chatId, errMsg != null ? errMsg : "⚠️ Ocorreu um erro inesperado. Tente novamente em instantes.");
@@ -233,7 +237,7 @@ public class FitnessBot extends TelegramLongPollingBot {
                 mealService.saveBotMessageId(meal.getId(), botMsg.getMessageId());
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Erro ao registrar refeição para chatId={}", chatId, e);
             String errMsg = resolverMensagemDeErro(e);
             enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar e salvar a refeição.");
         }
@@ -249,7 +253,7 @@ public class FitnessBot extends TelegramLongPollingBot {
                 workoutService.saveBotMessageId(session.getId(), botMsg.getMessageId());
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Erro ao registrar treino para chatId={}", chatId, e);
             String errMsg = resolverMensagemDeErro(e);
             enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar e salvar o treino.");
         }
@@ -272,8 +276,7 @@ public class FitnessBot extends TelegramLongPollingBot {
             DailyReportDto report = reportService.getReportForDate(user, date);
             enviarMensagemMarkdown(chatId, messageFormatter.formatDailyReport(report, date), criarBotoesRelatorio(report));
         } catch (Exception e) {
-            e.printStackTrace();
-            // Item 6: uniformizar tratamento de erro com resolverMensagemDeErro
+            log.error("Erro ao gerar relatório para chatId={}", chatId, e);
             String errMsg = resolverMensagemDeErro(e);
             enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao gerar o relatório.");
         }
@@ -303,7 +306,7 @@ public class FitnessBot extends TelegramLongPollingBot {
             fileLocal.delete();
             return bytes;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Erro ao baixar áudio fileId={}", fileId, e);
             return null; // caller verifica null (Item 1)
         }
     }
@@ -315,15 +318,17 @@ public class FitnessBot extends TelegramLongPollingBot {
         try {
             execute(message);
         } catch (TelegramApiException e) {
-            e.printStackTrace();
+            log.warn("Falha ao enviar mensagem simples para chatId={}: {}", chatId, e.getMessage());
         }
     }
+
 
     private org.telegram.telegrambots.meta.api.objects.Message enviarMensagemMarkdown(long chatId, String texto) {
         return enviarMensagemMarkdown(chatId, texto, null);
     }
 
     private org.telegram.telegrambots.meta.api.objects.Message enviarMensagemMarkdown(long chatId, String texto, org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup keyboard) {
+
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(texto);
@@ -334,7 +339,7 @@ public class FitnessBot extends TelegramLongPollingBot {
         try {
             return execute(message);
         } catch (TelegramApiException e) {
-            e.printStackTrace();
+            log.warn("Falha ao enviar mensagem Markdown para chatId={}: {}", chatId, e.getMessage());
             return null;
         }
     }
@@ -427,7 +432,7 @@ public class FitnessBot extends TelegramLongPollingBot {
                 enviarMensagem(chatId, "✏️ Envie um texto ou grave um áudio com o novo conteúdo para este treino.");
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Erro ao processar callback data='{}' para chatId={}", data, chatId, e);
             enviarMensagem(chatId, "Ocorreu um erro ao processar sua solicitação.");
         }
     }
@@ -445,7 +450,7 @@ public class FitnessBot extends TelegramLongPollingBot {
                 enviarMensagemMarkdown(chatId, messageFormatter.formatMealRegistered(meal), criarBotoesRefeicao(meal.getId()));
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Erro ao atualizar refeição id={} para chatId={}", mealId, chatId, e);
             String errMsg = resolverMensagemDeErro(e);
             enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar a refeição.");
         }
@@ -464,7 +469,7 @@ public class FitnessBot extends TelegramLongPollingBot {
                 enviarMensagemMarkdown(chatId, messageFormatter.formatWorkoutRegistered(session), criarBotoesTreino(session.getId()));
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Erro ao atualizar treino id={} para chatId={}", workoutId, chatId, e);
             String errMsg = resolverMensagemDeErro(e);
             enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar o treino.");
         }
@@ -483,7 +488,7 @@ public class FitnessBot extends TelegramLongPollingBot {
         try {
             execute(edit);
         } catch (TelegramApiException e) {
-            e.printStackTrace();
+            log.warn("Falha ao editar mensagem id={} no chatId={}, enviando nova mensagem como fallback", messageId, chatId);
             // Fallback: se não foi possível editar a mensagem original (muito antiga ou deletada), envia nova
             enviarMensagemMarkdown(chatId, novoTexto, keyboard);
         }
@@ -495,7 +500,7 @@ public class FitnessBot extends TelegramLongPollingBot {
         try {
             execute(answer);
         } catch (TelegramApiException e) {
-            e.printStackTrace();
+            log.warn("Falha ao confirmar callback id={}: {}", callbackQueryId, e.getMessage());
         }
     }
 
