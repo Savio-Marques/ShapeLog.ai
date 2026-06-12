@@ -3,11 +3,8 @@ package com.bot.telegram.bot;
 import com.bot.telegram.bot.handler.MealHandler;
 import com.bot.telegram.bot.handler.ReportHandler;
 import com.bot.telegram.bot.handler.WorkoutHandler;
-import com.bot.telegram.dto.DailyReportDto;
 import com.bot.telegram.formatter.MessageFormatter;
-import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
-import com.bot.telegram.model.WorkoutSession;
 import com.bot.telegram.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +35,11 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     @Value("${telegram.bot.token}")
     private String botToken;
 
+    @Value("${telegram.bot.allowed-users}")
+    private String allowedUsersStr;
+
+    private java.util.Set<Long> allowedUsersCache;
+
     @Autowired
     private UserService userService;
 
@@ -53,7 +55,6 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     @Autowired
     private MessageFormatter messageFormatter;
 
-    // Estado com TTL de 15 minutos para evitar estados presos
     private final Map<Long, String> userStates = new ConcurrentHashMap<>();
     private final Map<Long, Long> userStateTimes = new ConcurrentHashMap<>();
     private static final long STATE_TTL_MS = 15 * 60 * 1000L;
@@ -63,6 +64,26 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public String getBotToken() { return this.botToken; }
+
+    private boolean isUserAllowed(Long chatId) {
+        if (allowedUsersCache == null) {
+            allowedUsersCache = new java.util.HashSet<>();
+            if (allowedUsersStr != null && !allowedUsersStr.trim().isEmpty()) {
+                String[] ids = allowedUsersStr.split(",");
+                for (String id : ids) {
+                    try {
+                        allowedUsersCache.add(Long.parseLong(id.trim()));
+                    } catch (NumberFormatException e) {
+                        log.warn("ID inválido na lista de usuários permitidos: {}", id);
+                    }
+                }
+            }
+        }
+        if (allowedUsersCache.isEmpty()) {
+            return true;
+        }
+        return allowedUsersCache.contains(chatId);
+    }
 
     private void putState(long chatId, String state) {
         userStates.put(chatId, state);
@@ -90,6 +111,11 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         try {
             if (update.hasCallbackQuery()) {
                 chatId = update.getCallbackQuery().getMessage().getChatId();
+                if (!isUserAllowed(chatId)) {
+                    log.warn("Acesso negado silenciomente via CallbackQuery para chatId={}", chatId);
+                    return;
+                }
+                
                 int botMessageId = update.getCallbackQuery().getMessage().getMessageId();
                 String data = update.getCallbackQuery().getData();
                 String callbackQueryId = update.getCallbackQuery().getId();
@@ -107,6 +133,10 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
             if (update.hasMessage()) {
                 chatId = update.getMessage().getChatId();
+                if (!isUserAllowed(chatId)) {
+                    log.warn("Acesso negado silenciomente via Message para chatId={}", chatId);
+                    return;
+                }
 
                 UserTelegram user = userService.getOrCreateUser(
                         chatId,
@@ -306,7 +336,6 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
 
 
-    // Item 3: fallback para nova mensagem quando edição falha (mensagem muito antiga, deletada, etc.)
     @Override
     public void editarMensagemBot(long chatId, int messageId, String novoTexto, org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup keyboard) {
         org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText edit = new org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText();
@@ -321,7 +350,6 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
             execute(edit);
         } catch (TelegramApiException e) {
             log.warn("Falha ao editar mensagem id={} no chatId={}, enviando nova mensagem como fallback", messageId, chatId);
-            // Fallback: se não foi possível editar a mensagem original (muito antiga ou deletada), envia nova
             enviarMensagemMarkdown(chatId, novoTexto, keyboard);
         }
     }
@@ -336,24 +364,21 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         }
     }
 
-    // Detecta erros conhecidos na cadeia de causas e retorna mensagem amigável ao usuário
     @Override
     public String resolverMensagemDeErro(Exception e) {
         Throwable cause = e;
         while (cause != null) {
             String msg = cause.getMessage();
             if (msg != null) {
-                // Rate limit da API Gemini
                 if (msg.contains("RESOURCE_EXHAUSTED") || msg.contains("429")) {
                     return "⏳ A IA está sobrecarregada no momento. Aguarde alguns segundos e tente novamente!";
                 }
-                // Item 4: entrada inválida detectada no GeminiService (texto e áudio ambos ausentes)
                 if (cause instanceof IllegalArgumentException) {
                     return "⚠️ " + msg;
                 }
             }
             cause = cause.getCause();
         }
-        return null; // erro não mapeado, usar mensagem genérica do caller
+        return null;
     }
 }
