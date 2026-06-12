@@ -1,14 +1,14 @@
 package com.bot.telegram.bot;
 
+import com.bot.telegram.bot.handler.MealHandler;
+import com.bot.telegram.bot.handler.ReportHandler;
+import com.bot.telegram.bot.handler.WorkoutHandler;
 import com.bot.telegram.dto.DailyReportDto;
 import com.bot.telegram.formatter.MessageFormatter;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.model.WorkoutSession;
-import com.bot.telegram.service.MealService;
-import com.bot.telegram.service.ReportService;
 import com.bot.telegram.service.UserService;
-import com.bot.telegram.service.WorkoutService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class FitnessBot extends TelegramLongPollingBot {
+public class FitnessBot extends TelegramLongPollingBot implements BotActionSender {
 
     private static final Logger log = LoggerFactory.getLogger(FitnessBot.class);
 
@@ -42,13 +42,13 @@ public class FitnessBot extends TelegramLongPollingBot {
     private UserService userService;
 
     @Autowired
-    private MealService mealService;
+    private MealHandler mealHandler;
 
     @Autowired
-    private WorkoutService workoutService;
+    private WorkoutHandler workoutHandler;
 
     @Autowired
-    private ReportService reportService;
+    private ReportHandler reportHandler;
 
     @Autowired
     private MessageFormatter messageFormatter;
@@ -133,7 +133,7 @@ public class FitnessBot extends TelegramLongPollingBot {
                                 putState(chatId, "AWAITING_MEAL");
                                 enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto sua refeição agora!");
                             } else {
-                                registrarRefeicao(user, descricao, null, update.getMessage().getMessageId(), chatId);
+                                mealHandler.registrarRefeicao(user, descricao, null, update.getMessage().getMessageId(), chatId, this);
                             }
                         } else if (text.startsWith("/treino")) {
                             String descricao = text.replace("/treino", "").trim();
@@ -141,11 +141,11 @@ public class FitnessBot extends TelegramLongPollingBot {
                                 putState(chatId, "AWAITING_WORKOUT");
                                 enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto seu treino agora!");
                             } else {
-                                registrarTreino(user, descricao, null, update.getMessage().getMessageId(), chatId);
+                                workoutHandler.registrarTreino(user, descricao, null, update.getMessage().getMessageId(), chatId, this);
                             }
                         } else if (text.startsWith("/relatorio")) {
                             String arg = text.replace("/relatorio", "").trim();
-                            gerarRelatorio(user, arg, chatId);
+                            reportHandler.gerarRelatorio(user, arg, chatId, this);
                         } else {
                             enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /meta ou /relatorio.");
                         }
@@ -154,15 +154,15 @@ public class FitnessBot extends TelegramLongPollingBot {
                         if (state != null) {
                             removeState(chatId);
                             if ("AWAITING_MEAL".equals(state)) {
-                                registrarRefeicao(user, text, null, update.getMessage().getMessageId(), chatId);
+                                mealHandler.registrarRefeicao(user, text, null, update.getMessage().getMessageId(), chatId, this);
                             } else if ("AWAITING_WORKOUT".equals(state)) {
-                                registrarTreino(user, text, null, update.getMessage().getMessageId(), chatId);
+                                workoutHandler.registrarTreino(user, text, null, update.getMessage().getMessageId(), chatId, this);
                             } else if (state.startsWith("AWAITING_EDIT_MEAL:")) {
                                 Long mealId = Long.parseLong(state.split(":")[1]);
-                                atualizarRefeicaoEditada(mealId, text, null, chatId);
+                                mealHandler.atualizarRefeicaoEditada(mealId, text, null, chatId, this);
                             } else if (state.startsWith("AWAITING_EDIT_WORKOUT:")) {
                                 Long workoutId = Long.parseLong(state.split(":")[1]);
-                                atualizarTreinoEditado(workoutId, text, null, chatId);
+                                workoutHandler.atualizarTreinoEditado(workoutId, text, null, chatId, this);
                             }
                         } else {
                             enviarMensagem(chatId, "Por favor, envie primeiro o comando /refeicao ou /treino antes de descrever os alimentos ou exercícios.");
@@ -183,15 +183,15 @@ public class FitnessBot extends TelegramLongPollingBot {
                         }
 
                         if ("AWAITING_MEAL".equals(state)) {
-                            registrarRefeicao(user, null, audioBytes, update.getMessage().getMessageId(), chatId);
+                            mealHandler.registrarRefeicao(user, null, audioBytes, update.getMessage().getMessageId(), chatId, this);
                         } else if ("AWAITING_WORKOUT".equals(state)) {
-                            registrarTreino(user, null, audioBytes, update.getMessage().getMessageId(), chatId);
+                            workoutHandler.registrarTreino(user, null, audioBytes, update.getMessage().getMessageId(), chatId, this);
                         } else if (state.startsWith("AWAITING_EDIT_MEAL:")) {
                             Long mealId = Long.parseLong(state.split(":")[1]);
-                            atualizarRefeicaoEditada(mealId, null, audioBytes, chatId);
+                            mealHandler.atualizarRefeicaoEditada(mealId, null, audioBytes, chatId, this);
                         } else if (state.startsWith("AWAITING_EDIT_WORKOUT:")) {
                             Long workoutId = Long.parseLong(state.split(":")[1]);
-                            atualizarTreinoEditado(workoutId, null, audioBytes, chatId);
+                            workoutHandler.atualizarTreinoEditado(workoutId, null, audioBytes, chatId, this);
                         }
                     } else {
                         enviarMensagem(chatId, "Por favor, primeiro envie o comando correspondente (/refeicao ou /treino) e em seguida grave o áudio.");
@@ -227,74 +227,7 @@ public class FitnessBot extends TelegramLongPollingBot {
         }
     }
 
-    private void registrarRefeicao(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId) {
-        try {
-            enviarMensagem(chatId, "Analisando refeição... ");
-            Meal meal = mealService.registerMeal(user, text, audioBytes, userMessageId);
-            String formattedText = messageFormatter.formatMealRegistered(meal);
-            org.telegram.telegrambots.meta.api.objects.Message botMsg = enviarMensagemMarkdown(chatId, formattedText, criarBotoesRefeicao(meal.getId()));
-            if (botMsg != null) {
-                mealService.saveBotMessageId(meal.getId(), botMsg.getMessageId());
-            }
-        } catch (Exception e) {
-            log.error("Erro ao registrar refeição para chatId={}", chatId, e);
-            String errMsg = resolverMensagemDeErro(e);
-            enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar e salvar a refeição.");
-        }
-    }
 
-    private void registrarTreino(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId) {
-        try {
-            enviarMensagem(chatId, "Analisando o treino... ");
-            WorkoutSession session = workoutService.registerWorkout(user, text, audioBytes, userMessageId);
-            String formattedText = messageFormatter.formatWorkoutRegistered(session);
-            org.telegram.telegrambots.meta.api.objects.Message botMsg = enviarMensagemMarkdown(chatId, formattedText, criarBotoesTreino(session.getId()));
-            if (botMsg != null) {
-                workoutService.saveBotMessageId(session.getId(), botMsg.getMessageId());
-            }
-        } catch (Exception e) {
-            log.error("Erro ao registrar treino para chatId={}", chatId, e);
-            String errMsg = resolverMensagemDeErro(e);
-            enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar e salvar o treino.");
-        }
-    }
-
-    private void gerarRelatorio(UserTelegram user, String arg, long chatId) {
-        try {
-            java.time.LocalDate date = java.time.LocalDate.now();
-            if (!arg.isEmpty()) {
-                if ("ontem".equalsIgnoreCase(arg)) {
-                    date = date.minusDays(1);
-                } else {
-                    date = parseDate(arg);
-                    if (date == null) {
-                        enviarMensagem(chatId, "⚠️ Formato de data inválido! Use /relatorio, /relatorio ontem, ou /relatorio DD/MM/AAAA.");
-                        return;
-                    }
-                }
-            }
-            DailyReportDto report = reportService.getReportForDate(user, date);
-            enviarMensagemMarkdown(chatId, messageFormatter.formatDailyReport(report, date), criarBotoesRelatorio(report));
-        } catch (Exception e) {
-            log.error("Erro ao gerar relatório para chatId={}", chatId, e);
-            String errMsg = resolverMensagemDeErro(e);
-            enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao gerar o relatório.");
-        }
-    }
-
-    private java.time.LocalDate parseDate(String input) {
-        try {
-            if (input.matches("\\d{2}/\\d{2}/\\d{4}")) {
-                return java.time.LocalDate.parse(input, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-            } else if (input.matches("\\d{2}/\\d{2}")) {
-                String fullDate = input + "/" + java.time.LocalDate.now().getYear();
-                return java.time.LocalDate.parse(fullDate, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-            }
-        } catch (Exception e) {
-            // Ignora erro de parsing e retorna null
-        }
-        return null;
-    }
 
     private byte[] obterBytesDoAudio(String fileId) {
         try {
@@ -311,7 +244,8 @@ public class FitnessBot extends TelegramLongPollingBot {
         }
     }
 
-    private void enviarMensagem(long chatId, String texto) {
+    @Override
+    public void enviarMensagem(long chatId, String texto) {
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(texto);
@@ -323,11 +257,13 @@ public class FitnessBot extends TelegramLongPollingBot {
     }
 
 
-    private org.telegram.telegrambots.meta.api.objects.Message enviarMensagemMarkdown(long chatId, String texto) {
+    @Override
+    public org.telegram.telegrambots.meta.api.objects.Message enviarMensagemMarkdown(long chatId, String texto) {
         return enviarMensagemMarkdown(chatId, texto, null);
     }
 
-    private org.telegram.telegrambots.meta.api.objects.Message enviarMensagemMarkdown(long chatId, String texto, org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup keyboard) {
+    @Override
+    public org.telegram.telegrambots.meta.api.objects.Message enviarMensagemMarkdown(long chatId, String texto, org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup keyboard) {
 
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
@@ -344,84 +280,16 @@ public class FitnessBot extends TelegramLongPollingBot {
         }
     }
 
-    private org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup criarBotoesRefeicao(Long mealId) {
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton btnEdit = new org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton();
-        btnEdit.setText("✏️ Editar");
-        btnEdit.setCallbackData("edit_meal:" + mealId);
 
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton btnDel = new org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton();
-        btnDel.setText("❌ Excluir");
-        btnDel.setCallbackData("delete_meal:" + mealId);
-
-        java.util.List<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton> row = java.util.List.of(btnEdit, btnDel);
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup markup = new org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup();
-        markup.setKeyboard(java.util.List.of(row));
-        return markup;
-    }
-
-    private org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup criarBotoesTreino(Long workoutId) {
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton btnEdit = new org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton();
-        btnEdit.setText("✏️ Editar");
-        btnEdit.setCallbackData("edit_workout:" + workoutId);
-
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton btnDel = new org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton();
-        btnDel.setText("❌ Excluir");
-        btnDel.setCallbackData("delete_workout:" + workoutId);
-
-        java.util.List<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton> row = java.util.List.of(btnEdit, btnDel);
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup markup = new org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup();
-        markup.setKeyboard(java.util.List.of(row));
-        return markup;
-    }
-
-    private org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report) {
-        java.util.List<java.util.List<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>> keyboard = new java.util.ArrayList<>();
-
-        int idx = 1;
-        for (Meal meal : report.getMeals()) {
-            org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton btn = new org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton();
-            btn.setText("❌ Excluir Refeição " + idx);
-            btn.setCallbackData("delete_meal:" + meal.getId());
-            keyboard.add(java.util.List.of(btn));
-            idx++;
-        }
-
-        for (WorkoutSession workout : report.getWorkouts()) {
-            org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton btn = new org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton();
-            btn.setText("❌ Excluir Treino");
-            btn.setCallbackData("delete_workout:" + workout.getId());
-            keyboard.add(java.util.List.of(btn));
-        }
-
-        if (keyboard.isEmpty()) {
-            return null;
-        }
-
-        org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup markup = new org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup();
-        markup.setKeyboard(keyboard);
-        return markup;
-    }
 
     private void processarCallbackQuery(UserTelegram user, String data, int botMessageId, long chatId) {
         try {
             if (data.startsWith("delete_meal:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
-                // Item 7: verificar existência antes de deletar — trata duplo clique graciosamente
-                if (mealService.existeMeal(mealId)) {
-                    mealService.deleteMeal(mealId);
-                    editarMensagemBot(chatId, botMessageId, "❌ Refeição excluída com sucesso!", null);
-                } else {
-                    editarMensagemBot(chatId, botMessageId, "⚠️ Esta refeição já foi removida.", null);
-                }
+                mealHandler.processarExclusaoRefeicao(mealId, botMessageId, chatId, this);
             } else if (data.startsWith("delete_workout:")) {
                 Long workoutId = Long.parseLong(data.split(":")[1]);
-                // Item 7: verificar existência antes de deletar — trata duplo clique graciosamente
-                if (workoutService.existeWorkout(workoutId)) {
-                    workoutService.deleteWorkout(workoutId);
-                    editarMensagemBot(chatId, botMessageId, "❌ Treino excluído com sucesso!", null);
-                } else {
-                    editarMensagemBot(chatId, botMessageId, "⚠️ Este treino já foi removido.", null);
-                }
+                workoutHandler.processarExclusaoTreino(workoutId, botMessageId, chatId, this);
             } else if (data.startsWith("edit_meal:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
                 putState(chatId, "AWAITING_EDIT_MEAL:" + mealId);
@@ -437,46 +305,11 @@ public class FitnessBot extends TelegramLongPollingBot {
         }
     }
 
-    private void atualizarRefeicaoEditada(Long mealId, String text, byte[] audioBytes, long chatId) {
-        try {
-            enviarMensagem(chatId, "Atualizando refeição... ");
-            Meal meal = mealService.updateMeal(mealId, text, audioBytes);
-            if (meal.getBotMessageId() != null) {
-                editarMensagemBot(chatId, meal.getBotMessageId(),
-                        messageFormatter.formatMealRegistered(meal),
-                        criarBotoesRefeicao(meal.getId()));
-                enviarMensagem(chatId, "✅ Refeição atualizada com sucesso!");
-            } else {
-                enviarMensagemMarkdown(chatId, messageFormatter.formatMealRegistered(meal), criarBotoesRefeicao(meal.getId()));
-            }
-        } catch (Exception e) {
-            log.error("Erro ao atualizar refeição id={} para chatId={}", mealId, chatId, e);
-            String errMsg = resolverMensagemDeErro(e);
-            enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar a refeição.");
-        }
-    }
 
-    private void atualizarTreinoEditado(Long workoutId, String text, byte[] audioBytes, long chatId) {
-        try {
-            enviarMensagem(chatId, "Analisando treino... ");
-            WorkoutSession session = workoutService.updateWorkout(workoutId, text, audioBytes);
-            if (session.getBotMessageId() != null) {
-                editarMensagemBot(chatId, session.getBotMessageId(),
-                        messageFormatter.formatWorkoutRegistered(session),
-                        criarBotoesTreino(session.getId()));
-                enviarMensagem(chatId, "✅ Treino atualizado com sucesso!");
-            } else {
-                enviarMensagemMarkdown(chatId, messageFormatter.formatWorkoutRegistered(session), criarBotoesTreino(session.getId()));
-            }
-        } catch (Exception e) {
-            log.error("Erro ao atualizar treino id={} para chatId={}", workoutId, chatId, e);
-            String errMsg = resolverMensagemDeErro(e);
-            enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar o treino.");
-        }
-    }
 
     // Item 3: fallback para nova mensagem quando edição falha (mensagem muito antiga, deletada, etc.)
-    private void editarMensagemBot(long chatId, int messageId, String novoTexto, org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup keyboard) {
+    @Override
+    public void editarMensagemBot(long chatId, int messageId, String novoTexto, org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup keyboard) {
         org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText edit = new org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText();
         edit.setChatId(String.valueOf(chatId));
         edit.setMessageId(messageId);
@@ -505,7 +338,8 @@ public class FitnessBot extends TelegramLongPollingBot {
     }
 
     // Detecta erros conhecidos na cadeia de causas e retorna mensagem amigável ao usuário
-    private String resolverMensagemDeErro(Exception e) {
+    @Override
+    public String resolverMensagemDeErro(Exception e) {
         Throwable cause = e;
         while (cause != null) {
             String msg = cause.getMessage();
