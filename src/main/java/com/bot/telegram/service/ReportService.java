@@ -31,10 +31,10 @@ public class ReportService {
         List<Meal> meals = mealService.getMealsForDate(user, date);
         List<WorkoutSession> workouts = workoutService.getWorkoutsForDate(user, date);
 
-        int totalCal = 0;
-        double totalProt = 0;
-        double totalCarb = 0;
-        double totalFat = 0;
+        Integer totalCal = 0;
+        Double totalProt = 0.0;
+        Double totalCarb = 0.0;
+        Double totalFat = 0.0;
 
         for (Meal meal : meals) {
             totalCal += meal.getCalories() != null ? meal.getCalories() : 0;

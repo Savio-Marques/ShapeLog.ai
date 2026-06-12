@@ -12,10 +12,10 @@ import java.util.List;
 public class DailyReportDto {
     private List<Meal> meals;
     private List<WorkoutSession> workouts;
-    private int totalCalories;
-    private double totalProtein;
-    private double totalCarbs;
-    private double totalFat;
+    private Integer totalCalories;
+    private Double totalProtein;
+    private Double totalCarbs;
+    private Double totalFat;
     private UserTelegram user;
 
     // L3: dados de treino já processados pelo ReportService,

@@ -15,7 +15,21 @@ public class UserService {
     }
 
     public UserTelegram getOrCreateUser(Long id, String username, String firstName) {
-        return userRepository.findById(id).orElseGet(() -> {
+        return userRepository.findById(id).map(existingUser -> {
+            boolean changed = false;
+            if ((username != null && !username.equals(existingUser.getUsername())) || (username == null && existingUser.getUsername() != null)) {
+                existingUser.setUsername(username);
+                changed = true;
+            }
+            if ((firstName != null && !firstName.equals(existingUser.getFirstName())) || (firstName == null && existingUser.getFirstName() != null)) {
+                existingUser.setFirstName(firstName);
+                changed = true;
+            }
+            if (changed) {
+                return userRepository.save(existingUser);
+            }
+            return existingUser;
+        }).orElseGet(() -> {
             UserTelegram newUser = UserTelegram.builder()
                     .id(id)
                     .username(username)
