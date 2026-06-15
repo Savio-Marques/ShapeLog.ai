@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  shapelog-db:
+    image: postgres:15-alpine
+    container_name: shapelog-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - shapelog_pgdata:/var/lib/postgresql/data
+    networks:
+      - shapelog-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  shapelog-bot:
+    image: saviomarques/shapelog-bot:latest
+    container_name: shapelog-bot
+    restart: unless-stopped
+    depends_on:
+      shapelog-db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
+    volumes:
+      - ./gcp-credentials.json:/app/gcp-credentials.json:ro
+    networks:
+      - shapelog-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  shapelog_pgdata:
+
+networks:
+  shapelog-net:

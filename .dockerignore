@@ -1,0 +1,10 @@
+.git
+.idea
+.vscode
+target/
+!target/*.jar
+node_modules/
+*.log
+.env
+.env.*
+.DS_Store
