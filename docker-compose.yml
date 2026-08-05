@@ -28,6 +28,7 @@ services:
       - .env
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
+      - SPRING_PROFILES_ACTIVE=prod
     volumes:
       - ./gcp-credentials.json:/app/gcp-credentials.json:ro
     networks:

@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-
 public class Meal {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -23,6 +22,7 @@ public class Meal {
     @Column(columnDefinition = "TEXT")
     private String rawInput;
 
+    @Column(columnDefinition = "TEXT")
     private String description;
 
     private Integer calories;

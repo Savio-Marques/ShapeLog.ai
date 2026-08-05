@@ -26,25 +26,34 @@ public class MealHandler {
     }
 
     public void registrarRefeicao(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
+        Message tempMsg = sender.enviarMensagemRetornando(chatId, "Analisando refeição... ⏳");
         try {
-            sender.enviarMensagem(chatId, "Analisando refeição... ");
             Meal meal = mealService.registerMeal(user, text, audioBytes, userMessageId);
             String formattedText = messageFormatter.formatMealRegistered(meal);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             Message botMsg = sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesRefeicao(meal.getId()));
             if (botMsg != null) {
                 mealService.saveBotMessageId(meal.getId(), botMsg.getMessageId());
             }
         } catch (Exception e) {
             log.error("Erro ao registrar refeição para chatId={}", chatId, e);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar e salvar a refeição.");
         }
     }
 
     public void atualizarRefeicaoEditada(Long mealId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+        Message tempMsg = sender.enviarMensagemRetornando(chatId, "Atualizando refeição... ⏳");
         try {
-            sender.enviarMensagem(chatId, "Atualizando refeição... ");
             Meal meal = mealService.updateMeal(mealId, text, audioBytes);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             if (meal.getBotMessageId() != null) {
                 sender.editarMensagemBot(chatId, meal.getBotMessageId(),
                         messageFormatter.formatMealRegistered(meal),
@@ -55,6 +64,9 @@ public class MealHandler {
             }
         } catch (Exception e) {
             log.error("Erro ao atualizar refeição id={} para chatId={}", mealId, chatId, e);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar a refeição.");
         }

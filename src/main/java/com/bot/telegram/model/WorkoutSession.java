@@ -23,6 +23,7 @@ public class WorkoutSession {
     @Column(columnDefinition = "TEXT")
     private String rawInput;
 
+    @Column(columnDefinition = "TEXT")
     private String description;
 
     private Integer durationMinutes;

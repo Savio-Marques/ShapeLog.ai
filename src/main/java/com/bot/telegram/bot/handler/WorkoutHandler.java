@@ -1,4 +1,5 @@
 package com.bot.telegram.bot.handler;
+
 import com.bot.telegram.bot.BotActionSender;
 import com.bot.telegram.bot.keyboard.InlineKeyboardFactory;
 import com.bot.telegram.formatter.MessageFormatter;
@@ -42,23 +43,32 @@ public class WorkoutHandler {
     }
 
     public void registrarExercicio(Long workoutId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+        Message tempMsg = sender.enviarMensagemRetornando(chatId, "Analisando exercício... ⏳");
         try {
-            sender.enviarMensagem(chatId, "Analisando exercício... ");
             WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesToDraft(workoutId, text, audioBytes, null);
             String formattedText = messageFormatter.formatExercisesAdded(result.addedExercises);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             Message botMsg = sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(result.session.getId(), result.startIndex, result.addedExercises.size()));
         } catch (Exception e) {
             log.error("Erro ao registrar exercício no treino id={} para chatId={}", workoutId, chatId, e);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar o exercício.");
         }
     }
 
     public void atualizarExercicioEditado(Long workoutId, int exerciseIndex, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+        Message tempMsg = sender.enviarMensagemRetornando(chatId, "Atualizando exercício... ⏳");
         try {
-            sender.enviarMensagem(chatId, "Atualizando exercício... ");
             WorkoutSession session = workoutService.editExercise(workoutId, exerciseIndex, text, audioBytes);
             java.util.List<com.bot.telegram.dto.WorkoutDto.ExerciseDto> allEx = workoutService.deserializeExercises(session.getExercisesJson());
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             if (exerciseIndex >= 0 && exerciseIndex < allEx.size()) {
                 String formattedText = messageFormatter.formatExercisesAdded(java.util.List.of(allEx.get(exerciseIndex)));
                 sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(workoutId, exerciseIndex, 1));
@@ -67,6 +77,9 @@ public class WorkoutHandler {
             }
         } catch (Exception e) {
             log.error("Erro ao atualizar exercício index={} do treino id={} para chatId={}", exerciseIndex, workoutId, chatId, e);
+            if (tempMsg != null) {
+                sender.deletarMensagem(chatId, tempMsg.getMessageId());
+            }
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar o exercício.");
         }

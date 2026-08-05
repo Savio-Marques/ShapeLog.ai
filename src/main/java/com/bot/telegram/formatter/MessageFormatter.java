@@ -1,6 +1,6 @@
 package com.bot.telegram.formatter;
+
 import com.bot.telegram.dto.DailyReportDto;
-import com.bot.telegram.dto.DailyReportDto.ExerciseSummaryDto;
 import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
@@ -18,7 +18,7 @@ public class MessageFormatter {
         this.workoutService = workoutService;
     }
 
-    private String escapeMarkdown(String text) {
+    public String escapeMarkdown(String text) {
         if (text == null) return "";
         return text.replace("\\", "\\\\")  
                    .replace("_", "\\_")
@@ -42,18 +42,20 @@ public class MessageFormatter {
     }
 
     public String formatStart(String firstName) {
-        return "👋 Olá, *" + firstName + "*! Bem-vindo ao *ShapeLog.ai*.\n\n" +
-                "Aqui você pode registrar sua alimentação e treinos diários por texto ou áudio!\n\n" +
+        String name = firstName != null ? escapeMarkdown(firstName) : "Usuário";
+        return "👋 Olá, *" + name + "*\\! Bem\\-vindo ao *ShapeLog\\.ai*\\.\n\n" +
+                "Aqui você pode registrar sua alimentação e treinos diários por texto ou áudio\\!\n\n" +
                 "📌 *Comandos Disponíveis:*\n" +
-                "🥗 `/refeicao <alimentos>` - Registra uma refeição\n" +
-                "🏋️‍♂️ `/treino <exercicios>` - Registra um treino\n" +
-                "🎯 `/meta <calorias> <proteinas> <carbos> <gorduras>` - Define metas\n" +
-                "📊 `/relatorio` - Exibe o progresso diário";
+                "🥗 `/refeicao <alimentos>` \\- Registra uma refeição\n" +
+                "🏋️‍♂️ `/treino <titulo>` \\- Registra um treino\n" +
+                "💪 `/exercicio <exercicios>` \\- Adiciona exercícios ao treino do dia\n" +
+                "🎯 `/meta <calorias> <proteinas> <carbos> <gorduras>` \\- Define metas\n" +
+                "📊 `/relatorio` \\- Exibe o progresso diário";
     }
 
     public String formatGoalsUpdated(int cal, int prot, int carb, int fat) {
         return String.format(
-                "🎯 *Metas Diárias Atualizadas!*\n" +
+                "🎯 *Metas Diárias Atualizadas\\!*\n" +
                 "🔥 *Calorias:* %d kcal\n" +
                 "💪 *Proteínas:* %dg\n" +
                 "🍞 *Carboidratos:* %dg\n" +
@@ -64,14 +66,14 @@ public class MessageFormatter {
 
     public String formatMealRegistered(Meal meal) {
         return String.format(
-                "✅ *Refeição Registrada!*\n\n" +
+                "✅ *Refeição Registrada\\!*\n\n" +
                 "🥗 *Itens:* %s\n" +
-                "📊 *Macros:* `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg",
+                "📊 *Macros:* `%d kcal` \\| *P:* %sg \\| *C:* %sg \\| *G:* %sg",
                 meal.getDescription() != null ? escapeMarkdown(meal.getDescription()) : "sem descrição",
                 meal.getCalories() != null ? meal.getCalories() : 0,
-                formatDouble(meal.getProtein()),
-                formatDouble(meal.getCarbs()),
-                formatDouble(meal.getFat())
+                escapeMarkdown(formatDouble(meal.getProtein())),
+                escapeMarkdown(formatDouble(meal.getCarbs())),
+                escapeMarkdown(formatDouble(meal.getFat()))
         );
     }
 
@@ -88,10 +90,10 @@ public class MessageFormatter {
                 if (series != null) {
                     for (int i = 0; i < series.size(); i++) {
                         WorkoutDto.SeriesDto s = series.get(i);
-                        sb.append(String.format("\\* %dª série: %d reps - %s kg\n",
+                        sb.append(String.format("• %dª série: %d reps \\- %s kg\n",
                                 (i + 1),
                                 s.getReps() != null ? s.getReps() : 0,
-                                formatWeight(s.getWeight())
+                                escapeMarkdown(formatWeight(s.getWeight()))
                         ));
                     }
                 }
@@ -103,7 +105,7 @@ public class MessageFormatter {
 
     public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises) {
         if (exercises == null || exercises.isEmpty()) {
-            return "Nenhum exercício reconhecido.";
+            return "Nenhum exercício reconhecido\\.";
         }
         StringBuilder sb = new StringBuilder();
         sb.append("✅ *Exercício Registrado*\n\n");
@@ -113,10 +115,10 @@ public class MessageFormatter {
             if (series != null) {
                 for (int i = 0; i < series.size(); i++) {
                     WorkoutDto.SeriesDto s = series.get(i);
-                    sb.append(String.format("\\* %dª série: %d reps - %s kg\n",
+                    sb.append(String.format("• %dª série: %d reps \\- %s kg\n",
                             (i + 1),
                             s.getReps() != null ? s.getReps() : 0,
-                            formatWeight(s.getWeight())
+                            escapeMarkdown(formatWeight(s.getWeight()))
                     ));
                 }
             }
@@ -134,26 +136,26 @@ public class MessageFormatter {
         int mealIdx = 1;
         for (Meal meal : report.getMeals()) {
             mealsList.append(String.format("• *Refeição %d:* %s\n", mealIdx++, escapeMarkdown(meal.getDescription())));
-            mealsList.append(String.format("  └ `%d kcal` | *P:* %sg | *C:* %sg | *G:* %sg\n\n",
+            mealsList.append(String.format("  └ `%d kcal` \\| *P:* %sg \\| *C:* %sg \\| *G:* %sg\n\n",
                     meal.getCalories() != null ? meal.getCalories() : 0,
-                    formatDouble(meal.getProtein()),
-                    formatDouble(meal.getCarbs()),
-                    formatDouble(meal.getFat())
+                    escapeMarkdown(formatDouble(meal.getProtein())),
+                    escapeMarkdown(formatDouble(meal.getCarbs())),
+                    escapeMarkdown(formatDouble(meal.getFat()))
             ));
         }
         if (report.getMeals().isEmpty()) {
-            mealsList.append("Nenhuma refeição registrada hoje.\n");
+            mealsList.append("Nenhuma refeição registrada hoje\\.\n");
         }
         StringBuilder workoutsList = new StringBuilder();
         if (report.getWorkouts() == null || report.getWorkouts().isEmpty()) {
-            workoutsList.append("Nenhum treino registrado hoje.\n");
+            workoutsList.append("Nenhum treino registrado hoje\\.\n");
         } else {
             for (WorkoutSession workout : report.getWorkouts()) {
                 String titulo = workout.getRawInput();
                 if (titulo == null || titulo.isBlank() || titulo.startsWith("[")) {
                     titulo = "Treino";
                 }
-                workoutsList.append("Treino: ").append(escapeMarkdown(titulo)).append("\n\n");
+                workoutsList.append("*Treino:* ").append(escapeMarkdown(titulo)).append("\n\n");
                 String json = workout.getExercisesJson();
                 if (json == null || json.isBlank() || json.equals("[]")) {
                     workoutsList.append("_(Nenhum exercício registrado ainda)_\n\n");
@@ -166,10 +168,10 @@ public class MessageFormatter {
                         if (ex.getSeries() != null) {
                             for (int i = 0; i < ex.getSeries().size(); i++) {
                                 var s = ex.getSeries().get(i);
-                                workoutsList.append(String.format("\\* %dª série: %d reps - %s kg\n",
+                                workoutsList.append(String.format("• %dª série: %d reps \\- %s kg\n",
                                         (i + 1),
                                         s.getReps() != null ? s.getReps() : 0,
-                                        formatWeight(s.getWeight())
+                                        escapeMarkdown(formatWeight(s.getWeight()))
                                 ));
                             }
                         }
@@ -200,7 +202,7 @@ public class MessageFormatter {
                 "📆 *RELATÓRIO DE %s*\n\n" +
                 "🥗 *REFEIÇÕES*\n%s\n\n" +
                 "🏋️\u200d♂️ *TREINOS*\n%s\n\n" +
-                "📊 *TOTAIS VS. METAS*\n" +
+                "📊 *TOTAIS VS\\. METAS*\n" +
                 "*Calorias:* %d / %d kcal\n" +
                 "*Proteínas:* %s / %dg\n" +
                 "*Carbos:* %s / %dg\n" +
@@ -209,9 +211,9 @@ public class MessageFormatter {
                 mealsList.toString().trim(),
                 workoutsList.toString().trim(),
                 report.getTotalCalories(), targetCal,
-                formatDouble(report.getTotalProtein()), targetProt,
-                formatDouble(report.getTotalCarbs()), targetCarb,
-                formatDouble(report.getTotalFat()), targetFat
+                escapeMarkdown(formatDouble(report.getTotalProtein())), targetProt,
+                escapeMarkdown(formatDouble(report.getTotalCarbs())), targetCarb,
+                escapeMarkdown(formatDouble(report.getTotalFat())), targetFat
         );
     }
 

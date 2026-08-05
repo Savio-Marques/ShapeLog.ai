@@ -1,4 +1,5 @@
 package com.bot.telegram.bot;
+
 import com.bot.telegram.bot.handler.MealHandler;
 import com.bot.telegram.bot.handler.ReportHandler;
 import com.bot.telegram.bot.handler.WorkoutHandler;
@@ -8,9 +9,11 @@ import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.model.WorkoutSession;
 import com.bot.telegram.service.IWorkoutService;
 import com.bot.telegram.service.MealService;
+import com.bot.telegram.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+
 import java.util.Optional;
 
 @Component
@@ -24,11 +27,12 @@ public class CommandRouter {
     private final MealService mealService;
     private final IWorkoutService workoutService;
     private final StateManager stateManager;
+    private final UserService userService;
 
     public CommandRouter(MealHandler mealHandler, WorkoutHandler workoutHandler,
                          ReportHandler reportHandler, MessageFormatter messageFormatter,
                          MealService mealService, IWorkoutService workoutService,
-                         StateManager stateManager) {
+                         StateManager stateManager, UserService userService) {
         this.mealHandler = mealHandler;
         this.workoutHandler = workoutHandler;
         this.reportHandler = reportHandler;
@@ -36,6 +40,7 @@ public class CommandRouter {
         this.mealService = mealService;
         this.workoutService = workoutService;
         this.stateManager = stateManager;
+        this.userService = userService;
     }
 
     public void rotearComando(UserTelegram user, String text, int userMessageId, long chatId, BotActionSender sender) {
@@ -75,7 +80,7 @@ public class CommandRouter {
             String arg = text.replace("/relatorio", "").trim();
             reportHandler.gerarRelatorio(user, arg, chatId, sender);
         } else {
-            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /meta ou /relatorio.");
+            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
         }
     }
 
@@ -83,7 +88,7 @@ public class CommandRouter {
         String rawState = stateManager.getState(chatId);
         UserState state = UserState.from(rawState);
         if (state == null) {
-            sender.enviarMensagem(chatId, "Por favor, envie primeiro o comando /refeicao ou /treino antes de descrever os alimentos ou exercícios.");
+            sender.enviarMensagem(chatId, "💡 Para registrar algo, use primeiro um dos comandos:\n🥗 /refeicao\n🏋️‍♂️ /treino\n💪 /exercicio\n\nDepois é só descrever em texto ou enviar um áudio!");
             return;
         }
         stateManager.removeState(chatId);
@@ -123,7 +128,7 @@ public class CommandRouter {
         String rawState = stateManager.getState(chatId);
         UserState state = UserState.from(rawState);
         if (state == null) {
-            sender.enviarMensagem(chatId, "Por favor, primeiro envie o comando correspondente (/refeicao ou /treino) e em seguida grave o áudio.");
+            sender.enviarMensagem(chatId, "💡 Para enviar um áudio, envie primeiro o comando correspondente (/refeicao, /treino ou /exercicio) e em seguida grave o áudio.");
             return;
         }
         stateManager.removeState(chatId);
@@ -223,7 +228,7 @@ public class CommandRouter {
     private void rotearMeta(UserTelegram user, String text, long chatId, BotActionSender sender) {
         String[] partes = text.split("\\s+");
         if (partes.length < 5) {
-            sender.enviarMensagem(chatId, "Uso incorreto! Envie: /meta <calorias> <proteínas> <carbos> <gorduras>\nExemplo: /meta 2000 150 200 60");
+            sender.enviarMensagem(chatId, "⚠️ Formato incorreto! Use assim:\n/meta <calorias> <proteínas> <carbos> <gorduras>\n\n💡 Exemplo: /meta 2000 150 200 60");
             return;
         }
         try {
@@ -231,6 +236,7 @@ public class CommandRouter {
             int prot = Integer.parseInt(partes[2]);
             int carb = Integer.parseInt(partes[3]);
             int fat  = Integer.parseInt(partes[4]);
+            userService.updateGoals(user, cal, prot, carb, fat);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatGoalsUpdated(cal, prot, carb, fat));
         } catch (NumberFormatException e) {
             sender.enviarMensagem(chatId, "Erro: Os valores das metas devem ser números inteiros!");
