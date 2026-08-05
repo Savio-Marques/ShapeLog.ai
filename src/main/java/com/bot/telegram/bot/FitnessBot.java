@@ -1,8 +1,8 @@
 package com.bot.telegram.bot;
 
+import com.bot.telegram.formatter.MessageFormatter;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.service.UserService;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,9 +21,6 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 
 @Component
 public class FitnessBot extends TelegramLongPollingBot implements BotActionSender {
@@ -36,17 +33,17 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     @Value("${telegram.bot.token}")
     private String botToken;
 
-    @Value("${telegram.bot.allowed-users}")
-    private String allowedUsersStr;
-
-    private Set<Long> allowedUsersCache;
+    @Value("${telegram.bot.admin-id:0}")
+    private Long adminId;
 
     private final UserService userService;
     private final CommandRouter commandRouter;
+    private final MessageFormatter messageFormatter;
 
-    public FitnessBot(UserService userService, CommandRouter commandRouter) {
+    public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter) {
         this.userService = userService;
         this.commandRouter = commandRouter;
+        this.messageFormatter = messageFormatter;
     }
 
     @Override
@@ -55,23 +52,33 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     @Override
     public String getBotToken() { return this.botToken; }
 
-    @PostConstruct
-    private void initAllowedUsers() {
-        Set<Long> set = new HashSet<>();
-        if (allowedUsersStr != null && !allowedUsersStr.trim().isEmpty()) {
-            for (String id : allowedUsersStr.split(",")) {
-                try {
-                    set.add(Long.parseLong(id.trim()));
-                } catch (NumberFormatException e) {
-                    log.warn("ID inválido na lista de usuários permitidos: {}", id);
-                }
+    private boolean isUserAllowed(UserTelegram user, Long chatId) {
+        if (adminId != null && adminId > 0 && adminId.equals(chatId)) {
+            if (!Boolean.TRUE.equals(user.getApproved())) {
+                userService.approveUser(chatId);
             }
+            return true;
         }
-        this.allowedUsersCache = Collections.unmodifiableSet(set);
+        return Boolean.TRUE.equals(user.getApproved());
     }
 
-    private boolean isUserAllowed(Long chatId) {
-        return allowedUsersCache.isEmpty() || allowedUsersCache.contains(chatId);
+    private void notificarAcessoNegadoEAdmin(UserTelegram user, Long chatId) {
+        enviarMensagem(chatId, "⛔ Acesso restrito. Solicite permissão ao administrador para utilizar o bot.");
+
+        if (adminId != null && adminId > 0 && !adminId.equals(chatId)) {
+            String username = user.getUsername() != null ? messageFormatter.escapeMarkdown(user.getUsername()) : "sem username";
+            String firstName = user.getFirstName() != null ? messageFormatter.escapeMarkdown(user.getFirstName()) : "sem nome";
+
+            String notifMsg = String.format(
+                    "🔔 *Solicitação de Acesso*\n\n" +
+                    "👤 *Nome:* %s\n" +
+                    "🏷️ *Username:* @%s\n" +
+                    "🆔 *ID:* `%d`\n\n" +
+                    "Para aprovar, envie:\n`/aprovar %d`",
+                    firstName, username, chatId, chatId
+            );
+            enviarMensagemMarkdown(adminId, notifMsg);
+        }
     }
 
     @Override
@@ -80,27 +87,34 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         try {
             if (update.hasCallbackQuery()) {
                 chatId = update.getCallbackQuery().getMessage().getChatId();
-                if (!isUserAllowed(chatId)) { return; }
-                int botMessageId = update.getCallbackQuery().getMessage().getMessageId();
-                String data      = update.getCallbackQuery().getData();
-                String cbId      = update.getCallbackQuery().getId();
                 UserTelegram user = userService.getOrCreateUser(
                         chatId,
                         update.getCallbackQuery().getFrom().getUserName(),
                         update.getCallbackQuery().getFrom().getFirstName()
                 );
+                if (!isUserAllowed(user, chatId)) {
+                    responderCallback(update.getCallbackQuery().getId());
+                    notificarAcessoNegadoEAdmin(user, chatId);
+                    return;
+                }
+                int botMessageId = update.getCallbackQuery().getMessage().getMessageId();
+                String data      = update.getCallbackQuery().getData();
+                String cbId      = update.getCallbackQuery().getId();
                 responderCallback(cbId);
                 commandRouter.rotearCallback(user, data, botMessageId, chatId, this);
                 return;
             }
             if (update.hasMessage()) {
                 chatId = update.getMessage().getChatId();
-                if (!isUserAllowed(chatId)) { return; }
                 UserTelegram user = userService.getOrCreateUser(
                         chatId,
                         update.getMessage().getFrom().getUserName(),
                         update.getMessage().getFrom().getFirstName()
                 );
+                if (!isUserAllowed(user, chatId)) {
+                    notificarAcessoNegadoEAdmin(user, chatId);
+                    return;
+                }
                 if (update.getMessage().hasText()) {
                     String text = update.getMessage().getText().trim();
                     int msgId   = update.getMessage().getMessageId();

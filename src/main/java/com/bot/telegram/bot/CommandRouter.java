@@ -12,8 +12,10 @@ import com.bot.telegram.service.MealService;
 import com.bot.telegram.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 @Component
@@ -28,6 +30,9 @@ public class CommandRouter {
     private final IWorkoutService workoutService;
     private final StateManager stateManager;
     private final UserService userService;
+
+    @Value("${telegram.bot.admin-id:0}")
+    private Long adminId;
 
     public CommandRouter(MealHandler mealHandler, WorkoutHandler workoutHandler,
                          ReportHandler reportHandler, MessageFormatter messageFormatter,
@@ -79,9 +84,90 @@ public class CommandRouter {
         } else if (text.startsWith("/relatorio")) {
             String arg = text.replace("/relatorio", "").trim();
             reportHandler.gerarRelatorio(user, arg, chatId, sender);
+        } else if (text.startsWith("/aprovar")) {
+            rotearAprovar(chatId, text, sender);
+        } else if (text.startsWith("/revogar")) {
+            rotearRevogar(chatId, text, sender);
+        } else if (text.startsWith("/usuarios")) {
+            rotearListarUsuarios(chatId, sender);
         } else {
             sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
         }
+    }
+
+    private void rotearAprovar(long chatId, String text, BotActionSender sender) {
+        if (!isAdmin(chatId)) {
+            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
+            return;
+        }
+        String[] parts = text.split("\\s+");
+        if (parts.length < 2) {
+            sender.enviarMensagem(chatId, "⚠️ Uso incorreto! Use: /aprovar <ID_DO_USUARIO>");
+            return;
+        }
+        try {
+            Long targetId = Long.parseLong(parts[1]);
+            Optional<UserTelegram> optUser = userService.approveUser(targetId);
+            if (optUser.isPresent()) {
+                UserTelegram u = optUser.get();
+                String name = u.getFirstName() != null ? messageFormatter.escapeMarkdown(u.getFirstName()) : "Usuário";
+                sender.enviarMensagemMarkdown(chatId, String.format("✅ *Usuário Aprovado\\!*\n\n👤 *Nome:* %s\n🆔 *ID:* `%d`", name, u.getId()));
+                sender.enviarMensagemMarkdown(targetId, "🎉 *Acesso Aprovado\\!*\n\nSeu acesso ao *ShapeLog\\.ai* foi liberado pelo administrador\\! Envie /start para ver os comandos disponíveis\\.");
+            } else {
+                sender.enviarMensagem(chatId, "⚠️ Usuário não encontrado no banco de dados com o ID fornecido.");
+            }
+        } catch (NumberFormatException e) {
+            sender.enviarMensagem(chatId, "⚠️ ID inválido! O ID deve ser um número.");
+        }
+    }
+
+    private void rotearRevogar(long chatId, String text, BotActionSender sender) {
+        if (!isAdmin(chatId)) {
+            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
+            return;
+        }
+        String[] parts = text.split("\\s+");
+        if (parts.length < 2) {
+            sender.enviarMensagem(chatId, "⚠️ Uso incorreto! Use: /revogar <ID_DO_USUARIO>");
+            return;
+        }
+        try {
+            Long targetId = Long.parseLong(parts[1]);
+            Optional<UserTelegram> optUser = userService.revokeUser(targetId);
+            if (optUser.isPresent()) {
+                UserTelegram u = optUser.get();
+                String name = u.getFirstName() != null ? messageFormatter.escapeMarkdown(u.getFirstName()) : "Usuário";
+                sender.enviarMensagemMarkdown(chatId, String.format("❌ *Acesso Revogado\\!*\n\n👤 *Nome:* %s\n🆔 *ID:* `%d`", name, u.getId()));
+            } else {
+                sender.enviarMensagem(chatId, "⚠️ Usuário não encontrado no banco de dados.");
+            }
+        } catch (NumberFormatException e) {
+            sender.enviarMensagem(chatId, "⚠️ ID inválido! O ID deve ser um número.");
+        }
+    }
+
+    private void rotearListarUsuarios(long chatId, BotActionSender sender) {
+        if (!isAdmin(chatId)) {
+            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
+            return;
+        }
+        List<UserTelegram> approvedUsers = userService.listApprovedUsers();
+        if (approvedUsers.isEmpty()) {
+            sender.enviarMensagem(chatId, "Nenhum usuário aprovado no momento.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("📋 *Usuários Aprovados:*\n\n");
+        for (UserTelegram u : approvedUsers) {
+            String name = u.getFirstName() != null ? messageFormatter.escapeMarkdown(u.getFirstName()) : "Sem nome";
+            String uname = u.getUsername() != null ? "@" + messageFormatter.escapeMarkdown(u.getUsername()) : "";
+            sb.append(String.format("• %s %s \\(ID: `%d`\\)\n", name, uname, u.getId()));
+        }
+        sender.enviarMensagemMarkdown(chatId, sb.toString().trim());
+    }
+
+    private boolean isAdmin(long chatId) {
+        return adminId != null && adminId > 0 && adminId.equals(chatId);
     }
 
     public void rotearEstadoTexto(UserTelegram user, String text, int userMessageId, long chatId, BotActionSender sender) {

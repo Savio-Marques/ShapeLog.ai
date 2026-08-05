@@ -1,8 +1,10 @@
 package com.bot.telegram.model;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.*;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -23,5 +25,9 @@ public class UserTelegram {
     private Integer targetProtein;
     private Integer targetCarbs;
     private Integer targetFat;
+
+    @Builder.Default
+    private Boolean approved = false;
+
     private LocalDateTime registeredAt;
 }
