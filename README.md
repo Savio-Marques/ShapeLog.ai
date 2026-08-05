@@ -22,10 +22,7 @@ Este projeto foi arquitetado com foco total em isolamento, segurança e performa
 
 | Registro de Refeição via Áudio | Registro de Treino | Relatório Diário |
 | :---: | :---: | :---: |
-| ![Refeicao](https://via.placeholder.com/250x400?text=Print+Refeicao) | ![Treino](https://via.placeholder.com/250x400?text=Print+Treino) | ![Relatorio](https://via.placeholder.com/250x400?text=Print+Relatorio) |
-
-<br>
-*Exemplo prático: O usuário envia um áudio dizendo "Comi 2 ovos e 1 pão francês", o bot responde formatado e soma as calorias no banco de dados automaticamente.*
+| <img width="300" height="300" alt="refeicao" src="https://github.com/user-attachments/assets/776463f9-5991-4d58-88e9-4bba4cbd7ead" /> | <img width="300" height="374" alt="treino" src="https://github.com/user-attachments/assets/18185e74-cc73-4a96-8a21-db524ecc70d1" /> | <img width="300" height="450" alt="relatorio" src="https://github.com/user-attachments/assets/14cafeb5-9fb5-44c9-aeb4-f858fa64ea16" /> |
 
 ## 🛠️ Tecnologias Utilizadas
 
