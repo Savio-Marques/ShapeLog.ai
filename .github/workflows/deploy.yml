@@ -23,7 +23,9 @@ jobs:
           cache: 'maven'
 
       - name: Rodar testes
-        run: ./mvnw test --batch-mode
+        run: |
+          chmod +x mvnw
+          ./mvnw test --batch-mode
 
       - name: Login no Docker Hub
         uses: docker/login-action@v3
