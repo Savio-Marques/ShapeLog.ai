@@ -78,7 +78,7 @@ sequenceDiagram
     F->>F: Verifica whitelist (approved=true)
     F->>R: rotearComando()
     R->>H: registrarRefeicao()
-    H->>F: "Analisando refeição... ⏳"
+    H->>F: "Analisando refeição.. ⏳"
     H->>S: registerMeal()
     S->>AI: parseMeal(text)
     AI-->>S: MealDto {calories, protein, carbs, fat}
