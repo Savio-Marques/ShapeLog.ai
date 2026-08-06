@@ -102,7 +102,7 @@ sequenceDiagram
 | **Conteinerização** | Docker + Docker Compose |
 | **CI/CD** | GitHub Actions |
 | **Nuvem** | Oracle Cloud Infrastructure (OCI) — ARM64 |
-| **Testes** | JUnit 5 + Mockito + H2 (in-memory) |
+| **Testes** | JUnit 5 + Mockito + H2 |
 
 ---
 
