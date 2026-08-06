@@ -32,7 +32,28 @@ build/
 ### VS Code ###
 .vscode/
 
+### OS & Miscellaneous ###
 /target/
 /.idea/
 *.iml
 .DS_Store
+*.log
+
+### Security & Secrets (CRITICAL) ###
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.pub
+*.ppk
+shapelog_ci*
+id_rsa*
+id_ed25519*
+gcp-credentials.json
+*-credentials.json
+service-account*.json
+credentials.json
+secrets.properties
+application-local.properties
+application-secrets.properties

@@ -1,0 +1,57 @@
+name: 🤖 Bot Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Ação a executar no bot em produção'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - start
+          - stop
+          - restart
+          - status
+
+jobs:
+  control:
+    name: 🎛️ Controle do Bot — ${{ github.event.inputs.action }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔑 SSH → Executar ação na VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_SSH_HOST }}
+          username: ${{ secrets.OCI_SSH_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/shapelog-bot
+
+            ACTION="${{ github.event.inputs.action }}"
+
+            if [ "$ACTION" = "start" ]; then
+              echo "▶️ Iniciando o bot..."
+              docker compose up -d shapelog-bot
+              echo "✅ Bot iniciado com sucesso!"
+
+            elif [ "$ACTION" = "stop" ]; then
+              echo "⏹️ Parando o bot..."
+              docker compose stop shapelog-bot
+              echo "✅ Bot parado. Banco de dados continua rodando."
+
+            elif [ "$ACTION" = "restart" ]; then
+              echo "🔄 Reiniciando o bot..."
+              docker compose restart shapelog-bot
+              echo "✅ Bot reiniciado com sucesso!"
+
+            elif [ "$ACTION" = "status" ]; then
+              echo "📊 Status dos containers:"
+              echo "-----------------------------------"
+              docker compose ps
+              echo ""
+              echo "📋 Últimas 50 linhas de log do bot:"
+              echo "-----------------------------------"
+              docker logs shapelog-bot --tail=50
+            fi
