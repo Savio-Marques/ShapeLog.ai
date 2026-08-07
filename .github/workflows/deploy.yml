@@ -62,7 +62,11 @@ jobs:
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
             cd /home/ubuntu/shapelog-bot
-            docker compose pull shapelog-bot
-            docker compose up -d --no-build
+            COMPOSE_CMD="docker compose"
+            if ! docker compose version > /dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            fi
+            $COMPOSE_CMD pull shapelog-bot
+            $COMPOSE_CMD up -d --no-build
             docker image prune -f
             echo "Deploy concluido! Bot esta online."

@@ -29,27 +29,32 @@ jobs:
           script: |
             cd /home/ubuntu/shapelog-bot
 
+            COMPOSE_CMD="docker compose"
+            if ! docker compose version > /dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            fi
+
             ACTION="${{ github.event.inputs.action }}"
 
             if [ "$ACTION" = "start" ]; then
               echo "▶️ Iniciando o bot..."
-              docker compose up -d shapelog-bot
+              $COMPOSE_CMD up -d shapelog-bot
               echo "✅ Bot iniciado com sucesso!"
 
             elif [ "$ACTION" = "stop" ]; then
               echo "⏹️ Parando o bot..."
-              docker compose stop shapelog-bot
+              $COMPOSE_CMD stop shapelog-bot
               echo "✅ Bot parado. Banco de dados continua rodando."
 
             elif [ "$ACTION" = "restart" ]; then
               echo "🔄 Reiniciando o bot..."
-              docker compose restart shapelog-bot
+              $COMPOSE_CMD restart shapelog-bot
               echo "✅ Bot reiniciado com sucesso!"
 
             elif [ "$ACTION" = "status" ]; then
               echo "📊 Status dos containers:"
               echo "-----------------------------------"
-              docker compose ps
+              $COMPOSE_CMD ps
               echo ""
               echo "📋 Últimas 50 linhas de log do bot:"
               echo "-----------------------------------"
