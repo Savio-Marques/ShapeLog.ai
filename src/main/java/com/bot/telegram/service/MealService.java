@@ -3,6 +3,7 @@ import com.bot.telegram.dto.MealDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.repository.MealRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,10 +14,12 @@ public class MealService {
 
     private final MealRepository mealRepository;
     private final GeminiService geminiService;
+    private final MeterRegistry meterRegistry;
 
-    public MealService(MealRepository mealRepository, GeminiService geminiService) {
+    public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry) {
         this.mealRepository = mealRepository;
         this.geminiService = geminiService;
+        this.meterRegistry = meterRegistry;
     }
 
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes) {
@@ -37,7 +40,9 @@ public class MealService {
                 .userMessageId(userMessageId)
                 .createdAt(LocalDateTime.now())
                 .build();
-        return mealRepository.save(meal);
+        Meal saved = mealRepository.save(meal);
+        meterRegistry.counter("shapelog.meals.registered").increment();
+        return saved;
     }
 
     @Transactional

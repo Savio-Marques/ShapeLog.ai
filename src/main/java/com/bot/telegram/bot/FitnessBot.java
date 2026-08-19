@@ -19,6 +19,8 @@ import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.io.File;
 import java.nio.file.Files;
 
@@ -39,11 +41,13 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     private final UserService userService;
     private final CommandRouter commandRouter;
     private final MessageFormatter messageFormatter;
+    private final MeterRegistry meterRegistry;
 
-    public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter) {
+    public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter, MeterRegistry meterRegistry) {
         this.userService = userService;
         this.commandRouter = commandRouter;
         this.messageFormatter = messageFormatter;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -83,9 +87,11 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public void onUpdateReceived(Update update) {
+        Timer.Sample sample = Timer.start(meterRegistry);
         Long chatId = null;
         try {
             if (update.hasCallbackQuery()) {
+                meterRegistry.counter("shapelog.bot.updates", "type", "callback").increment();
                 chatId = update.getCallbackQuery().getMessage().getChatId();
                 UserTelegram user = userService.getOrCreateUser(
                         chatId,
@@ -116,6 +122,7 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                     return;
                 }
                 if (update.getMessage().hasText()) {
+                    meterRegistry.counter("shapelog.bot.updates", "type", "message").increment();
                     String text = update.getMessage().getText().trim();
                     int msgId   = update.getMessage().getMessageId();
                     if (text.startsWith("/")) {
@@ -124,6 +131,7 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                         commandRouter.rotearEstadoTexto(user, text, msgId, chatId, this);
                     }
                 } else if (update.getMessage().hasVoice()) {
+                    meterRegistry.counter("shapelog.bot.updates", "type", "voice").increment();
                     Voice voice = update.getMessage().getVoice();
                     byte[] audioBytes = obterBytesDoAudio(voice.getFileId());
                     if (audioBytes == null) {
@@ -131,14 +139,19 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                         return;
                     }
                     commandRouter.rotearEstadoVoz(user, audioBytes, chatId, this);
+                } else {
+                    meterRegistry.counter("shapelog.bot.updates", "type", "other").increment();
                 }
             }
         } catch (Exception e) {
+            meterRegistry.counter("shapelog.bot.errors").increment();
             log.error("Erro inesperado ao processar update do chatId={}", chatId, e);
             if (chatId != null) {
                 String errMsg = resolverMensagemDeErro(e);
                 enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro inesperado. Tente novamente em instantes.");
             }
+        } finally {
+            sample.stop(meterRegistry.timer("shapelog.bot.update.duration"));
         }
     }
 

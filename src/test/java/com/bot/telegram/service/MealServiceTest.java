@@ -4,6 +4,7 @@ import com.bot.telegram.dto.MealDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.repository.MealRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +29,7 @@ class MealServiceTest {
     void setUp() {
         mealRepository = mock(MealRepository.class);
         geminiService = mock(GeminiService.class);
-        mealService = new MealService(mealRepository, geminiService);
+        mealService = new MealService(mealRepository, geminiService, new SimpleMeterRegistry());
 
         testUser = UserTelegram.builder()
                 .id(200L)

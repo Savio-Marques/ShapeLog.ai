@@ -9,6 +9,8 @@ import org.springframework.ai.content.Media;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -16,15 +18,19 @@ import java.util.concurrent.TimeUnit;
 public class GeminiService {
 
     private final ChatClient chatClient;
+    private final MeterRegistry meterRegistry;
 
-    public GeminiService(ChatModel chatModel) {
+    public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry) {
         this.chatClient = ChatClient.create(chatModel);
+        this.meterRegistry = meterRegistry;
     }
 
     public MealDto parseMeal(String text, byte[] audioBytes) {
         if ((text == null || text.isBlank()) && (audioBytes == null || audioBytes.length == 0)) {
             throw new IllegalArgumentException("Nenhum conteúdo para analisar. Envie um texto ou áudio válido.");
         }
+        meterRegistry.counter("shapelog.gemini.calls", "type", "meal").increment();
+        Timer.Sample sample = Timer.start(meterRegistry);
         if (audioBytes != null && audioBytes.length > 0) {
             ByteArrayResource resource = new ByteArrayResource(audioBytes);
             Media media = new Media(MimeType.valueOf("audio/ogg"), resource);
@@ -40,16 +46,19 @@ public class GeminiService {
                 .media(media)
                 .build();
             try {
-                return CompletableFuture.supplyAsync(() -> chatClient.prompt(new Prompt(userMessage))
+                MealDto result = CompletableFuture.supplyAsync(() -> chatClient.prompt(new Prompt(userMessage))
                     .call()
                     .entity(MealDto.class))
                     .get(45, TimeUnit.SECONDS);
+                sample.stop(meterRegistry.timer("shapelog.gemini.call.duration", "type", "meal"));
+                return result;
             } catch (Exception e) {
+                meterRegistry.counter("shapelog.gemini.errors", "type", "meal").increment();
                 throw new RuntimeException("Erro ao chamar API do Gemini (timeout ou falha): " + e.getMessage(), e);
             }
         } else {
             try {
-                return CompletableFuture.supplyAsync(() -> chatClient.prompt()
+                MealDto result = CompletableFuture.supplyAsync(() -> chatClient.prompt()
                     .user(u -> u.text("""
                         Analise a refeição informada: "{text}".
                         Estime os macronutrientes e retorne um JSON com exatamente estes campos:
@@ -63,7 +72,10 @@ public class GeminiService {
                     .call()
                     .entity(MealDto.class))
                     .get(45, TimeUnit.SECONDS);
+                sample.stop(meterRegistry.timer("shapelog.gemini.call.duration", "type", "meal"));
+                return result;
             } catch (Exception e) {
+                meterRegistry.counter("shapelog.gemini.errors", "type", "meal").increment();
                 throw new RuntimeException("Erro ao chamar API do Gemini (timeout ou falha): " + e.getMessage(), e);
             }
         }
@@ -73,6 +85,8 @@ public class GeminiService {
         if ((text == null || text.isBlank()) && (audioBytes == null || audioBytes.length == 0)) {
             throw new IllegalArgumentException("Nenhum conteúdo para analisar. Envie um texto ou áudio válido.");
         }
+        meterRegistry.counter("shapelog.gemini.calls", "type", "workout").increment();
+        Timer.Sample sample = Timer.start(meterRegistry);
         if (audioBytes != null && audioBytes.length > 0) {
             ByteArrayResource resource = new ByteArrayResource(audioBytes);
             Media media = new Media(MimeType.valueOf("audio/ogg"), resource);
@@ -81,16 +95,19 @@ public class GeminiService {
                 .media(media)
                 .build();
             try {
-                return CompletableFuture.supplyAsync(() -> chatClient.prompt(new Prompt(userMessage))
+                WorkoutDto result = CompletableFuture.supplyAsync(() -> chatClient.prompt(new Prompt(userMessage))
                     .call()
                     .entity(WorkoutDto.class))
                     .get(45, TimeUnit.SECONDS);
+                sample.stop(meterRegistry.timer("shapelog.gemini.call.duration", "type", "workout"));
+                return result;
             } catch (Exception e) {
+                meterRegistry.counter("shapelog.gemini.errors", "type", "workout").increment();
                 throw new RuntimeException("Erro ao chamar API do Gemini (timeout ou falha): " + e.getMessage(), e);
             }
         } else {
             try {
-                return CompletableFuture.supplyAsync(() -> chatClient.prompt()
+                WorkoutDto result = CompletableFuture.supplyAsync(() -> chatClient.prompt()
                     .user(u -> u.text("""
                         Analise o treino informado: "{text}".
                         Extraia a descrição do treino (description como o grupamento muscular, ex: 'Peito', 'Costas', 'Pernas'), a duração em minutos (durationMinutes) e a lista de exercícios (exercises).
@@ -100,7 +117,10 @@ public class GeminiService {
                     .call()
                     .entity(WorkoutDto.class))
                     .get(45, TimeUnit.SECONDS);
+                sample.stop(meterRegistry.timer("shapelog.gemini.call.duration", "type", "workout"));
+                return result;
             } catch (Exception e) {
+                meterRegistry.counter("shapelog.gemini.errors", "type", "workout").increment();
                 throw new RuntimeException("Erro ao chamar API do Gemini (timeout ou falha): " + e.getMessage(), e);
             }
         }

@@ -4,6 +4,7 @@ import com.bot.telegram.model.WorkoutSession;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.repository.WorkoutSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
@@ -16,11 +17,13 @@ public class WorkoutService implements IWorkoutService {
     private final WorkoutSessionRepository workoutRepository;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
-    public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper) {
+    public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper, MeterRegistry meterRegistry) {
         this.geminiService = geminiService;
         this.workoutRepository = workoutRepository;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     public static class WorkoutUpdateResult {
@@ -52,6 +55,7 @@ public class WorkoutService implements IWorkoutService {
                     .createdAt(LocalDateTime.now())
                     .userMessageId(userMessageId)
                     .build();
+            meterRegistry.counter("shapelog.workouts.created").increment();
         }
         return workoutRepository.save(session);
     }
