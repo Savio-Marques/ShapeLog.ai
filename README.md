@@ -73,7 +73,7 @@ Além das métricas padrões da JVM, CPU e HTTP, a aplicação exporta métricas
 | `shapelog_bot_errors_total` | Counter | Total de erros/exceções capturados no bot |
 | `shapelog_bot_update_duration_seconds` | Timer | Tempo de latência de processamento dos updates do Telegram |
 | `shapelog_gemini_calls_total` | Counter | Chamadas enviadas para a IA agrupadas por tipo (`meal`, `workout`) |
-| `shapelog_gemini_call_duration_seconds` | Timer | Latência de resposta da IA Vertex AI Gemini |
+| `shapelog_gemini_call_duration_seconds` | Timer | Latência de resposta da IA Google Gemini |
 | `shapelog_gemini_errors_total` | Counter | Falhas ou timeouts em chamadas à IA |
 | `shapelog_meals_registered_total` | Counter | Refeições extraídas e salvas com sucesso no PostgreSQL |
 | `shapelog_workouts_total` | Counter | Treinos criados com sucesso no PostgreSQL |
@@ -164,7 +164,7 @@ sequenceDiagram
 |---|---|
 | **Linguagem** | Java 17 |
 | **Framework** | Spring Boot 4.1 |
-| **Inteligência Artificial** | Spring AI + Google Gemini 2.5 Flash (Vertex AI) |
+| **Inteligência Artificial** | Spring AI + Google Gemini 2.5 Flash (Google AI Studio) |
 | **Observabilidade** | Spring Boot Actuator + Micrometer + Prometheus + Grafana |
 | **Banco de Dados** | PostgreSQL 15 |
 | **ORM** | Spring Data JPA / Hibernate |
@@ -200,7 +200,7 @@ git push main
 ### Pré-requisitos
 - Java 17+
 - Docker Desktop
-- Conta no Google Cloud com Vertex AI habilitado
+- API Key gratuita no Google AI Studio ([aistudio.google.com](https://aistudio.google.com/apikey))
 - Bot criado no Telegram via [@BotFather](https://t.me/BotFather)
 
 ### 1. Clone o repositório
@@ -225,9 +225,8 @@ POSTGRES_USER=shapelog_user
 POSTGRES_PASSWORD=sua_senha_aqui
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/shapelog
 
-# Google Cloud
-VERTEX_AI_PROJECT_ID=seu_project_id
-VERTEX_AI_LOCATION=us-central1
+# Google AI Studio
+GEMINI_API_KEY=sua_api_key_aqui
 ```
 
 ### 3. Suba o ambiente Docker Dev (PostgreSQL, Prometheus e Grafana)
@@ -310,7 +309,6 @@ docker compose -f docker-compose.dev.yml up -d
 /home/ubuntu/shapelog-bot/
 ├── docker-compose.yml            ← Orquestra Bot, Postgres, Prometheus e Grafana
 ├── .env                          ← Variáveis de ambiente (não versionado)
-├── gcp-credentials.json          ← Credenciais GCP (não versionado)
 └── monitoring/                   ← Configurações e Dashboards do Prometheus + Grafana (IaC)
     ├── prometheus.yml
     └── grafana/
