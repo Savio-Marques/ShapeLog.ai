@@ -26,7 +26,6 @@ public class MealService {
         return registerMeal(user, text, audioBytes, null);
     }
 
-    @Transactional
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
         MealDto dto = geminiService.parseMeal(text, audioBytes);
         validarMealDto(dto);
@@ -46,7 +45,6 @@ public class MealService {
         return saved;
     }
 
-    @Transactional
     public Meal updateMeal(Long mealId, String text, byte[] audioBytes) {
         Meal meal = mealRepository.findById(mealId)
                 .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));

@@ -10,7 +10,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F2CC0C?logo=grafana&logoColor=black)](https://grafana.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Testes-58%20passing-success?logo=junit5)](./src/test)
+[![Tests](https://img.shields.io/badge/Testes-63%20passing-success?logo=junit5)](./src/test)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](./LICENSE)
 
 </div>
@@ -252,12 +252,12 @@ docker compose -f docker-compose.dev.yml up -d
 ./mvnw test
 ```
 
-**58 testes automatizados** organizados por camada:
+**63 testes automatizados** organizados por camada:
 
 | Classe de Teste | Tipo | Qtd |
 |---|---|---|
-| `WorkoutServiceTest` | Unitário (Mockito) | 14 |
-| `CommandRouterTest` | Unitário (Mockito) | 13 |
+| `WorkoutServiceTest` | Unitário (Mockito) | 16 |
+| `CommandRouterTest` | Unitário (Mockito) | 16 |
 | `MessageFormatterTest` | Unitário (Mockito) | 9 |
 | `UserServiceTest` | Unitário (Mockito) | 7 |
 | `MealServiceTest` | Unitário (Mockito) | 7 |

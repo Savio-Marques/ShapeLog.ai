@@ -171,4 +171,28 @@ class CommandRouterTest {
         verify(sender).enviarMensagem(eq(USER_ID), contains("Comando não reconhecido"));
         verify(userService, never()).approveUser(anyLong());
     }
+
+    @Test
+    void rotearComando_comandoComSufixoPlural_naoDeveReconhecerComoComandoValido() {
+        commandRouter.rotearComando(user, "/refeicoes", 1, USER_ID, sender);
+        commandRouter.rotearComando(user, "/treinos", 2, USER_ID, sender);
+        verify(sender, times(2)).enviarMensagem(eq(USER_ID), contains("Comando não reconhecido"));
+        verifyNoInteractions(mealHandler);
+        verifyNoInteractions(workoutHandler);
+    }
+
+    @Test
+    void rotearComando_comandoComMencaoAoBot_deveExtrairArgumentoCorretamente() {
+        commandRouter.rotearComando(user, "/refeicao@ShapeLogBot Pão e ovo", 1, USER_ID, sender);
+        verify(mealHandler).registrarRefeicao(eq(user), eq("Pão e ovo"), isNull(), eq(1), eq(USER_ID), eq(sender));
+    }
+
+    @Test
+    void rotearCallback_deleteExComUuid_deveChamarWorkoutHandlerComExerciseId() {
+        WorkoutSession ws = WorkoutSession.builder().id(20L).user(user).build();
+        when(workoutService.findById(20L)).thenReturn(Optional.of(ws));
+
+        commandRouter.rotearCallback(user, "delete_ex:20:a1b2c3d4", 99, USER_ID, sender);
+        verify(workoutHandler).processarExclusaoExercicio(20L, "a1b2c3d4", 99, USER_ID, sender);
+    }
 }

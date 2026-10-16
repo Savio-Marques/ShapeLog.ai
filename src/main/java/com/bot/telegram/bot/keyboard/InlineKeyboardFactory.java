@@ -1,5 +1,6 @@
 package com.bot.telegram.bot.keyboard;
 import com.bot.telegram.dto.DailyReportDto;
+import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.WorkoutSession;
 import org.springframework.stereotype.Component;
@@ -34,6 +35,33 @@ public class InlineKeyboardFactory {
         List<InlineKeyboardButton> row = List.of(btnEdit, btnDel);
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
         markup.setKeyboard(List.of(row));
+        return markup;
+    }
+
+    public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, List<WorkoutDto.ExerciseDto> exercises) {
+        if (exercises == null || exercises.isEmpty()) {
+            return null;
+        }
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        int count = exercises.size();
+
+        for (int i = 0; i < count; i++) {
+            WorkoutDto.ExerciseDto ex = exercises.get(i);
+            String ref = (ex.getId() != null && !ex.getId().isBlank()) ? ex.getId() : String.valueOf(i);
+            String suffix = count > 1 ? " " + (i + 1) : "";
+
+            InlineKeyboardButton btnEdit = new InlineKeyboardButton();
+            btnEdit.setText("✏️ Editar" + suffix);
+            btnEdit.setCallbackData("edit_ex:" + workoutId + ":" + ref);
+
+            InlineKeyboardButton btnDel = new InlineKeyboardButton();
+            btnDel.setText("❌ Excluir" + suffix);
+            btnDel.setCallbackData("delete_ex:" + workoutId + ":" + ref);
+
+            keyboard.add(List.of(btnEdit, btnDel));
+        }
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(keyboard);
         return markup;
     }
 

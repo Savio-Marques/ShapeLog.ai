@@ -46,11 +46,14 @@ public class WorkoutHandler {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, "Analisando exercício... ⏳");
         try {
             WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesToDraft(workoutId, text, audioBytes, null);
-            String formattedText = messageFormatter.formatExercisesAdded(result.addedExercises);
             if (tempMsg != null) {
                 sender.deletarMensagem(chatId, tempMsg.getMessageId());
             }
-            Message botMsg = sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(result.session.getId(), result.startIndex, result.addedExercises.size()));
+            for (com.bot.telegram.dto.WorkoutDto.ExerciseDto ex : result.addedExercises) {
+                java.util.List<com.bot.telegram.dto.WorkoutDto.ExerciseDto> singleList = java.util.List.of(ex);
+                String formattedText = messageFormatter.formatExercisesAdded(singleList);
+                sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(result.session.getId(), singleList));
+            }
         } catch (Exception e) {
             log.error("Erro ao registrar exercício no treino id={} para chatId={}", workoutId, chatId, e);
             if (tempMsg != null) {
@@ -62,21 +65,27 @@ public class WorkoutHandler {
     }
 
     public void atualizarExercicioEditado(Long workoutId, int exerciseIndex, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+        atualizarExercicioEditado(workoutId, String.valueOf(exerciseIndex), text, audioBytes, chatId, sender);
+    }
+
+    public void atualizarExercicioEditado(Long workoutId, String exerciseId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, "Atualizando exercício... ⏳");
         try {
-            WorkoutSession session = workoutService.editExercise(workoutId, exerciseIndex, text, audioBytes);
+            WorkoutSession session = workoutService.editExerciseById(workoutId, exerciseId, text, audioBytes);
             java.util.List<com.bot.telegram.dto.WorkoutDto.ExerciseDto> allEx = workoutService.deserializeExercises(session.getExercisesJson());
+            int idx = workoutService.findExerciseIndex(allEx, exerciseId);
             if (tempMsg != null) {
                 sender.deletarMensagem(chatId, tempMsg.getMessageId());
             }
-            if (exerciseIndex >= 0 && exerciseIndex < allEx.size()) {
-                String formattedText = messageFormatter.formatExercisesAdded(java.util.List.of(allEx.get(exerciseIndex)));
-                sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(workoutId, exerciseIndex, 1));
+            if (idx >= 0 && idx < allEx.size()) {
+                java.util.List<com.bot.telegram.dto.WorkoutDto.ExerciseDto> singleList = java.util.List.of(allEx.get(idx));
+                String formattedText = messageFormatter.formatExercisesAdded(singleList);
+                sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(workoutId, singleList));
             } else {
                 sender.enviarMensagem(chatId, "✅ Exercício atualizado.");
             }
         } catch (Exception e) {
-            log.error("Erro ao atualizar exercício index={} do treino id={} para chatId={}", exerciseIndex, workoutId, chatId, e);
+            log.error("Erro ao atualizar exercício id={} do treino id={} para chatId={}", exerciseId, workoutId, chatId, e);
             if (tempMsg != null) {
                 sender.deletarMensagem(chatId, tempMsg.getMessageId());
             }
@@ -86,9 +95,15 @@ public class WorkoutHandler {
     }
 
     public void processarExclusaoExercicio(Long workoutId, int exerciseIndex, int botMessageId, long chatId, BotActionSender sender) {
+        processarExclusaoExercicio(workoutId, String.valueOf(exerciseIndex), botMessageId, chatId, sender);
+    }
+
+    public void processarExclusaoExercicio(Long workoutId, String exerciseId, int botMessageId, long chatId, BotActionSender sender) {
         try {
-            workoutService.removeExercise(workoutId, exerciseIndex);
+            workoutService.removeExerciseById(workoutId, exerciseId);
             sender.editarMensagemBot(chatId, botMessageId, "❌ Exercício excluído com sucesso!", null);
+        } catch (IllegalArgumentException e) {
+            sender.editarMensagemBot(chatId, botMessageId, "⚠️ " + e.getMessage(), null);
         } catch (Exception e) {
             sender.editarMensagemBot(chatId, botMessageId, "⚠️ Erro ao remover exercício.", null);
         }

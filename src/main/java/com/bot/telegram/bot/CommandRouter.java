@@ -51,48 +51,53 @@ public class CommandRouter {
 
     public void rotearComando(UserTelegram user, String text, int userMessageId, long chatId, BotActionSender sender) {
         stateManager.removeState(chatId);
-        if (text.startsWith("/start")) {
-            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatStart(user.getFirstName()));
-        } else if (text.startsWith("/meta")) {
-            rotearMeta(user, text, chatId, sender);
-        } else if (text.startsWith("/refeicao")) {
-            String descricao = text.replace("/refeicao", "").trim();
-            if (descricao.isEmpty()) {
-                stateManager.putState(chatId, UserState.AWAITING_MEAL.serialize());
-                sender.enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto sua refeição agora!");
-            } else {
-                mealHandler.registrarRefeicao(user, descricao, null, userMessageId, chatId, sender);
+        String trimmed = text != null ? text.trim() : "";
+        String[] tokens = trimmed.split("\\s+", 2);
+        String comando = tokens[0].split("@")[0].toLowerCase();
+        String argumento = tokens.length > 1 ? tokens[1].trim() : "";
+
+        switch (comando) {
+            case "/start" ->
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatStart(user.getFirstName()));
+            case "/meta" ->
+                rotearMeta(user, trimmed, chatId, sender);
+            case "/refeicao" -> {
+                if (argumento.isEmpty()) {
+                    stateManager.putState(chatId, UserState.AWAITING_MEAL.serialize());
+                    sender.enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto sua refeição agora!");
+                } else {
+                    mealHandler.registrarRefeicao(user, argumento, null, userMessageId, chatId, sender);
+                }
             }
-        } else if (text.startsWith("/treino")) {
-            String titulo = text.replace("/treino", "").trim();
-            if (titulo.isEmpty()) {
-                stateManager.putState(chatId, UserState.AWAITING_WORKOUT_TITLE.serialize());
-                sender.enviarMensagem(chatId, "💪 Qual o título do seu treino hoje? (Ex: Costas e Bíceps, Treino A)");
-            } else {
-                workoutHandler.criarRascunho(user, titulo, userMessageId, chatId, sender);
+            case "/treino" -> {
+                if (argumento.isEmpty()) {
+                    stateManager.putState(chatId, UserState.AWAITING_WORKOUT_TITLE.serialize());
+                    sender.enviarMensagem(chatId, "💪 Qual o título do seu treino hoje? (Ex: Costas e Bíceps, Treino A)");
+                } else {
+                    workoutHandler.criarRascunho(user, argumento, userMessageId, chatId, sender);
+                }
             }
-        } else if (text.startsWith("/exercicio")) {
-            String descricao = text.replace("/exercicio", "").trim();
-            Optional<WorkoutSession> optWorkout = workoutService.getLatestWorkoutForToday(user);
-            if (optWorkout.isEmpty()) {
-                sender.enviarMensagem(chatId, "⚠️ Você precisa iniciar um treino hoje primeiro! Use /treino <Titulo>");
-            } else if (descricao.isEmpty()) {
-                stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
-                sender.enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto o exercício agora!");
-            } else {
-                workoutHandler.registrarExercicio(optWorkout.get().getId(), descricao, null, chatId, sender);
+            case "/exercicio" -> {
+                Optional<WorkoutSession> optWorkout = workoutService.getLatestWorkoutForToday(user);
+                if (optWorkout.isEmpty()) {
+                    sender.enviarMensagem(chatId, "⚠️ Você precisa iniciar um treino hoje primeiro! Use /treino <Titulo>");
+                } else if (argumento.isEmpty()) {
+                    stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
+                    sender.enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto o exercício agora!");
+                } else {
+                    workoutHandler.registrarExercicio(optWorkout.get().getId(), argumento, null, chatId, sender);
+                }
             }
-        } else if (text.startsWith("/relatorio")) {
-            String arg = text.replace("/relatorio", "").trim();
-            reportHandler.gerarRelatorio(user, arg, chatId, sender);
-        } else if (text.startsWith("/aprovar")) {
-            rotearAprovar(chatId, text, sender);
-        } else if (text.startsWith("/revogar")) {
-            rotearRevogar(chatId, text, sender);
-        } else if (text.startsWith("/usuarios")) {
-            rotearListarUsuarios(chatId, sender);
-        } else {
-            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
+            case "/relatorio" ->
+                reportHandler.gerarRelatorio(user, argumento, chatId, sender);
+            case "/aprovar" ->
+                rotearAprovar(chatId, trimmed, sender);
+            case "/revogar" ->
+                rotearRevogar(chatId, trimmed, sender);
+            case "/usuarios" ->
+                rotearListarUsuarios(chatId, sender);
+            default ->
+                sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
         }
     }
 
@@ -202,8 +207,8 @@ public class CommandRouter {
                 String payload = UserState.extractPayload(rawState);
                 if (payload != null && payload.contains(":")) {
                     Long workoutId = Long.parseLong(payload.split(":")[0]);
-                    int index = Integer.parseInt(payload.split(":")[1]);
-                    workoutHandler.atualizarExercicioEditado(workoutId, index, text, null, chatId, sender);
+                    String exerciseId = payload.split(":")[1];
+                    workoutHandler.atualizarExercicioEditado(workoutId, exerciseId, text, null, chatId, sender);
                 }
             }
             default ->
@@ -244,8 +249,8 @@ public class CommandRouter {
                 String payload = UserState.extractPayload(rawState);
                 if (payload != null && payload.contains(":")) {
                     Long workoutId = Long.parseLong(payload.split(":")[0]);
-                    int index = Integer.parseInt(payload.split(":")[1]);
-                    workoutHandler.atualizarExercicioEditado(workoutId, index, null, audioBytes, chatId, sender);
+                    String exerciseId = payload.split(":")[1];
+                    workoutHandler.atualizarExercicioEditado(workoutId, exerciseId, null, audioBytes, chatId, sender);
                 }
             }
             default ->
@@ -291,8 +296,8 @@ public class CommandRouter {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }
-                int index = Integer.parseInt(parts[2]);
-                stateManager.putState(chatId, UserState.AWAITING_EDIT_EXERCISE.withPayload(workoutId + ":" + index));
+                String exerciseId = parts[2];
+                stateManager.putState(chatId, UserState.AWAITING_EDIT_EXERCISE.withPayload(workoutId + ":" + exerciseId));
                 sender.enviarMensagem(chatId, "✏️ Envie um texto ou grave um áudio com o novo conteúdo para este exercício.");
             } else if (data.startsWith("delete_ex:")) {
                 String[] parts = data.split(":");
@@ -303,8 +308,8 @@ public class CommandRouter {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }
-                int index = Integer.parseInt(parts[2]);
-                workoutHandler.processarExclusaoExercicio(workoutId, index, botMessageId, chatId, sender);
+                String exerciseId = parts[2];
+                workoutHandler.processarExclusaoExercicio(workoutId, exerciseId, botMessageId, chatId, sender);
             } else if (data.startsWith("del_rep_m:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
                 Meal meal = mealService.findById(mealId).orElse(null);

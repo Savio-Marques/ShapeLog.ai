@@ -7,4 +7,17 @@ node_modules/
 *.log
 .env
 .env.*
+*.env
+*.pem
+*.key
+*.pub
+*.ppk
+shapelog_ci*
+id_rsa*
+id_ed25519*
+*-credentials.json
+credentials.json
+secrets.properties
+application-local.properties
+application-secrets.properties
 .DS_Store

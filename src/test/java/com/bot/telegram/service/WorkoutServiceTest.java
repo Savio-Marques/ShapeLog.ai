@@ -251,4 +251,50 @@ class WorkoutServiceTest {
         assertEquals(999, ws.getBotMessageId());
         verify(workoutRepository).save(ws);
     }
+
+    @Test
+    void removeExerciseById_aposExcluirPrimeiro_deveEncontrarSegundoPeloIdSemIndexShift() {
+        String jsonOriginal = "[{\"id\":\"ex-1\",\"name\":\"Supino\",\"series\":[]},{\"id\":\"ex-2\",\"name\":\"Crucifixo\",\"series\":[]},{\"id\":\"ex-3\",\"name\":\"Tríceps\",\"series\":[]}]";
+        WorkoutSession existente = WorkoutSession.builder()
+                .id(25L)
+                .user(testUser)
+                .exercisesJson(jsonOriginal)
+                .build();
+
+        when(workoutRepository.findById(25L)).thenReturn(Optional.of(existente));
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        workoutService.removeExerciseById(25L, "ex-1");
+        assertFalse(existente.getExercisesJson().contains("Supino"));
+        assertTrue(existente.getExercisesJson().contains("Crucifixo"));
+        assertTrue(existente.getExercisesJson().contains("Tríceps"));
+
+        workoutService.removeExerciseById(25L, "ex-2");
+        assertFalse(existente.getExercisesJson().contains("Crucifixo"));
+        assertTrue(existente.getExercisesJson().contains("Tríceps"));
+    }
+
+    @Test
+    void editExerciseById_aposExcluirPrimeiro_deveEditarExercicioCorretoPeloId() {
+        String jsonOriginal = "[{\"id\":\"ex-1\",\"name\":\"Supino\",\"series\":[]},{\"id\":\"ex-2\",\"name\":\"Crucifixo\",\"series\":[]}]";
+        WorkoutSession existente = WorkoutSession.builder()
+                .id(26L)
+                .user(testUser)
+                .exercisesJson(jsonOriginal)
+                .build();
+
+        when(workoutRepository.findById(26L)).thenReturn(Optional.of(existente));
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        workoutService.removeExerciseById(26L, "ex-1");
+
+        WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(12).weight(22.0).build();
+        WorkoutDto.ExerciseDto editedEx = WorkoutDto.ExerciseDto.builder().name("Crucifixo Inclinado").series(List.of(series)).build();
+        WorkoutDto dto = WorkoutDto.builder().exercises(List.of(editedEx)).build();
+        when(geminiService.parseWorkout(eq("crucifixo inclinado 12 reps 22kg"), isNull())).thenReturn(dto);
+
+        WorkoutSession updated = workoutService.editExerciseById(26L, "ex-2", "crucifixo inclinado 12 reps 22kg", null);
+        assertTrue(updated.getExercisesJson().contains("Crucifixo Inclinado"));
+        assertTrue(updated.getExercisesJson().contains("ex-2"));
+    }
 }

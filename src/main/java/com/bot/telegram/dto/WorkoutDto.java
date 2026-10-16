@@ -17,6 +17,7 @@ public class WorkoutDto {
     @AllArgsConstructor
     @Builder
     public static class ExerciseDto {
+        private String id;
         private String name;
         private List<SeriesDto> series;
     }
