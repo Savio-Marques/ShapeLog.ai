@@ -46,6 +46,16 @@ public class ReportHandler {
         }
     }
 
+    public void atualizarRelatorioAposExclusao(UserTelegram user, java.time.LocalDate date, int botMessageId, long chatId, BotActionSender sender) {
+        try {
+            DailyReportDto report = reportService.getReportForDate(user, date);
+            sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatDailyReport(report, date), keyboardFactory.criarBotoesRelatorio(report));
+        } catch (Exception e) {
+            log.error("Erro ao atualizar relatório após exclusão para chatId={}", chatId, e);
+            sender.enviarMensagem(chatId, "Item excluído, mas ocorreu um erro ao recarregar o relatório.");
+        }
+    }
+
     private java.time.LocalDate parseDate(String input) {
         try {
             if (input.matches("\\d{2}/\\d{2}/\\d{4}")) {

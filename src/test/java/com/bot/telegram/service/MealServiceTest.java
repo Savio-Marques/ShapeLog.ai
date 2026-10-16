@@ -101,4 +101,25 @@ class MealServiceTest {
         List<Meal> meals = mealService.getMealsForDate(testUser, LocalDate.now());
         assertEquals(1, meals.size());
     }
+
+    @Test
+    void registerMeal_comRetornoVazioOuSemNutrientes_deveLancarExcecao() {
+        MealDto dtoVazio = MealDto.builder().description("sem descrição").calories(0).protein(0.0).carbs(0.0).fat(0.0).build();
+        when(geminiService.parseMeal(anyString(), any())).thenReturn(dtoVazio);
+
+        assertThrows(IllegalArgumentException.class, () -> mealService.registerMeal(testUser, "mensagem aleatoria", null, 1));
+        verify(mealRepository, never()).save(any());
+    }
+
+    @Test
+    void updateMeal_comRetornoVazioOuSemNutrientes_deveLancarExcecao() {
+        Meal mealExistente = Meal.builder().id(10L).user(testUser).description("Pão").calories(150).protein(4.0).carbs(28.0).fat(2.0).build();
+        when(mealRepository.findById(10L)).thenReturn(Optional.of(mealExistente));
+
+        MealDto dtoVazio = MealDto.builder().description("").calories(0).build();
+        when(geminiService.parseMeal(anyString(), any())).thenReturn(dtoVazio);
+
+        assertThrows(IllegalArgumentException.class, () -> mealService.updateMeal(10L, "nada", null));
+        verify(mealRepository, never()).save(any());
+    }
 }

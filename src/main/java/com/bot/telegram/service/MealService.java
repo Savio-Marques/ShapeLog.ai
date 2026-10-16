@@ -29,6 +29,7 @@ public class MealService {
     @Transactional
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
         MealDto dto = geminiService.parseMeal(text, audioBytes);
+        validarMealDto(dto);
         Meal meal = Meal.builder()
                 .user(user)
                 .rawInput(text != null ? text : "[Mensagem de Voz]")
@@ -50,6 +51,7 @@ public class MealService {
         Meal meal = mealRepository.findById(mealId)
                 .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));
         MealDto dto = geminiService.parseMeal(text, audioBytes);
+        validarMealDto(dto);
         meal.setRawInput(text != null ? text : "[Mensagem de Voz]");
         meal.setDescription(dto.getDescription() != null ? dto.getDescription() : "sem descrição");
         meal.setCalories(dto.getCalories() != null ? dto.getCalories() : 0);
@@ -57,6 +59,21 @@ public class MealService {
         meal.setCarbs(dto.getCarbs() != null ? dto.getCarbs() : 0.0);
         meal.setFat(dto.getFat() != null ? dto.getFat() : 0.0);
         return mealRepository.save(meal);
+    }
+
+    private void validarMealDto(MealDto dto) {
+        if (dto == null) {
+            throw new IllegalArgumentException("Não foi possível analisar a refeição. Tente descrever com mais detalhes!");
+        }
+        boolean semCalorias = dto.getCalories() == null || dto.getCalories() <= 0;
+        boolean semProteina = dto.getProtein() == null || dto.getProtein() <= 0;
+        boolean semCarbos   = dto.getCarbs() == null || dto.getCarbs() <= 0;
+        boolean semGordura  = dto.getFat() == null || dto.getFat() <= 0;
+        boolean semDescricao = dto.getDescription() == null || dto.getDescription().isBlank() || "sem descrição".equalsIgnoreCase(dto.getDescription().trim());
+
+        if ((semCalorias && semProteina && semCarbos && semGordura) || semDescricao) {
+            throw new IllegalArgumentException("Não foi possível identificar alimentos ou valores nutricionais válidos. Por favor, descreva sua refeição com mais detalhes!");
+        }
     }
 
     @Transactional

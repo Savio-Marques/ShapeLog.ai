@@ -65,13 +65,16 @@ public class WorkoutService implements IWorkoutService {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
+        if (dto == null || dto.getExercises() == null || dto.getExercises().isEmpty()) {
+            throw new IllegalArgumentException("Não foi possível identificar nenhum exercício na sua mensagem. Envie os exercícios com séries e repetições (ex: Supino 3x10 80kg)!");
+        }
         if (dto.getDurationMinutes() != null) {
             int existingDuration = session.getDurationMinutes() != null ? session.getDurationMinutes() : 0;
             session.setDurationMinutes(existingDuration + dto.getDurationMinutes());
         }
         List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
         int startIndex = existingExercises.size();
-        List<WorkoutDto.ExerciseDto> added = dto.getExercises() != null ? dto.getExercises() : java.util.List.of();
+        List<WorkoutDto.ExerciseDto> added = dto.getExercises();
         existingExercises.addAll(added);
         session.setExercisesJson(serializeExercises(existingExercises));
         if (userMessageId != null) {
@@ -85,11 +88,12 @@ public class WorkoutService implements IWorkoutService {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
+        if (dto == null || dto.getExercises() == null || dto.getExercises().isEmpty()) {
+            throw new IllegalArgumentException("Não foi possível identificar o exercício atualizado. Tente descrever novamente com séries e peso!");
+        }
         List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
         if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
-            if (dto.getExercises() != null && !dto.getExercises().isEmpty()) {
-                existingExercises.set(exerciseIndex, dto.getExercises().get(0));
-            }
+            existingExercises.set(exerciseIndex, dto.getExercises().get(0));
         }
         session.setExercisesJson(serializeExercises(existingExercises));
         return workoutRepository.save(session);

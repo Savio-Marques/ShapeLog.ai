@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -304,6 +305,26 @@ public class CommandRouter {
                 }
                 int index = Integer.parseInt(parts[2]);
                 workoutHandler.processarExclusaoExercicio(workoutId, index, botMessageId, chatId, sender);
+            } else if (data.startsWith("del_rep_m:")) {
+                Long mealId = Long.parseLong(data.split(":")[1]);
+                Meal meal = mealService.findById(mealId).orElse(null);
+                if (meal == null || !meal.getUser().getId().equals(chatId)) {
+                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
+                    return;
+                }
+                LocalDate date = meal.getCreatedAt() != null ? meal.getCreatedAt().toLocalDate() : LocalDate.now();
+                mealService.deleteMeal(mealId);
+                reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
+            } else if (data.startsWith("del_rep_w:")) {
+                Long workoutId = Long.parseLong(data.split(":")[1]);
+                WorkoutSession ws = workoutService.findById(workoutId).orElse(null);
+                if (ws == null || !ws.getUser().getId().equals(chatId)) {
+                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
+                    return;
+                }
+                LocalDate date = ws.getCreatedAt() != null ? ws.getCreatedAt().toLocalDate() : LocalDate.now();
+                workoutService.deleteWorkout(workoutId);
+                reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
             }
         } catch (Exception e) {
             log.error("Erro ao processar callback data='{}' para chatId={}", data, chatId, e);
@@ -322,6 +343,10 @@ public class CommandRouter {
             int prot = Integer.parseInt(partes[2]);
             int carb = Integer.parseInt(partes[3]);
             int fat  = Integer.parseInt(partes[4]);
+            if (cal <= 0 || prot <= 0 || carb <= 0 || fat <= 0) {
+                sender.enviarMensagem(chatId, "⚠️ Os valores das metas devem ser números maiores que zero!\n\n💡 Exemplo: /meta 2000 150 200 60");
+                return;
+            }
             userService.updateGoals(user, cal, prot, carb, fat);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatGoalsUpdated(cal, prot, carb, fat));
         } catch (NumberFormatException e) {

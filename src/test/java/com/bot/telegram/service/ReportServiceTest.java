@@ -19,7 +19,6 @@ class ReportServiceTest {
 
     private MealService mealService;
     private WorkoutService workoutService;
-    private ObjectMapper objectMapper;
     private ReportService reportService;
 
     private UserTelegram user;
@@ -28,8 +27,7 @@ class ReportServiceTest {
     void setUp() {
         mealService = mock(MealService.class);
         workoutService = mock(WorkoutService.class);
-        objectMapper = new ObjectMapper();
-        reportService = new ReportService(mealService, workoutService, objectMapper);
+        reportService = new ReportService(mealService, workoutService);
 
         user = UserTelegram.builder()
                 .id(300L)

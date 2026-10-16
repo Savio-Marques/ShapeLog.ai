@@ -62,15 +62,23 @@ public class InlineKeyboardFactory {
         for (Meal meal : report.getMeals()) {
             InlineKeyboardButton btn = new InlineKeyboardButton();
             btn.setText("❌ Excluir Refeição " + idx);
-            btn.setCallbackData("delete_meal:" + meal.getId());
+            btn.setCallbackData("del_rep_m:" + meal.getId());
             keyboard.add(List.of(btn));
             idx++;
         }
+        int workoutIdx = 1;
         for (WorkoutSession workout : report.getWorkouts()) {
             InlineKeyboardButton btn = new InlineKeyboardButton();
-            btn.setText("❌ Excluir Treino");
-            btn.setCallbackData("delete_workout:" + workout.getId());
+            String raw = workout.getRawInput();
+            String titulo = (raw != null && !raw.isBlank() && !raw.startsWith("[")) ? raw.trim() : "Treino";
+            if (report.getWorkouts().size() > 1) {
+                btn.setText("❌ Excluir " + titulo + " (" + workoutIdx + ")");
+            } else {
+                btn.setText("❌ Excluir " + titulo);
+            }
+            btn.setCallbackData("del_rep_w:" + workout.getId());
             keyboard.add(List.of(btn));
+            workoutIdx++;
         }
         if (keyboard.isEmpty()) {
             return null;

@@ -117,6 +117,44 @@ class CommandRouterTest {
     }
 
     @Test
+    void rotearComando_metaComValoresNegativosOuZero_deveMostrarErro() {
+        commandRouter.rotearComando(user, "/meta 0 150 200 60", 1, USER_ID, sender);
+        verify(sender).enviarMensagem(eq(USER_ID), contains("maiores que zero"));
+        verifyNoInteractions(userService);
+
+        commandRouter.rotearComando(user, "/meta 2000 -10 200 60", 1, USER_ID, sender);
+        verify(sender, times(2)).enviarMensagem(eq(USER_ID), contains("maiores que zero"));
+    }
+
+    @Test
+    void rotearCallback_delRepMeal_deveExcluirEAtualizarRelatorio() {
+        com.bot.telegram.model.Meal meal = com.bot.telegram.model.Meal.builder()
+                .id(10L)
+                .user(user)
+                .createdAt(java.time.LocalDateTime.now())
+                .build();
+        when(mealService.findById(10L)).thenReturn(Optional.of(meal));
+
+        commandRouter.rotearCallback(user, "del_rep_m:10", 99, USER_ID, sender);
+        verify(mealService).deleteMeal(10L);
+        verify(reportHandler).atualizarRelatorioAposExclusao(eq(user), any(java.time.LocalDate.class), eq(99), eq(USER_ID), eq(sender));
+    }
+
+    @Test
+    void rotearCallback_delRepWorkout_deveExcluirEAtualizarRelatorio() {
+        WorkoutSession ws = WorkoutSession.builder()
+                .id(20L)
+                .user(user)
+                .createdAt(java.time.LocalDateTime.now())
+                .build();
+        when(workoutService.findById(20L)).thenReturn(Optional.of(ws));
+
+        commandRouter.rotearCallback(user, "del_rep_w:20", 99, USER_ID, sender);
+        verify(workoutService).deleteWorkout(20L);
+        verify(reportHandler).atualizarRelatorioAposExclusao(eq(user), any(java.time.LocalDate.class), eq(99), eq(USER_ID), eq(sender));
+    }
+
+    @Test
     void rotearComando_aprovar_apenasAdmin_deveAprovarUsuario() {
         UserTelegram targetUser = UserTelegram.builder().id(555L).firstName("Fulano").build();
         when(userService.approveUser(555L)).thenReturn(Optional.of(targetUser));
