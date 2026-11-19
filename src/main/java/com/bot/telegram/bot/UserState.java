@@ -6,8 +6,8 @@ public enum UserState {
     AWAITING_WORKOUT_TITLE,
     AWAITING_EXERCISE,
     AWAITING_EDIT_MEAL,
-    AWAITING_EDIT_WORKOUT,
-    AWAITING_EDIT_EXERCISE;
+    AWAITING_EDIT_EXERCISE,
+    AWAITING_GOAL;
 
     public String serialize() {
         return this.name();

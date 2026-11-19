@@ -8,7 +8,9 @@ import java.util.Optional;
 public interface IWorkoutService {
 
     WorkoutService.WorkoutUpdateResult addExercisesToDraft(Long workoutId, String text, byte[] audioBytes, Integer userMessageId);
+    WorkoutService.WorkoutUpdateResult addExercisesOrCreateWorkout(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId);
     WorkoutSession createOrUpdateDraftWorkout(UserTelegram user, String title, Integer userMessageId);
+    WorkoutSession createNewDraftWorkout(UserTelegram user, String title, Integer userMessageId);
     WorkoutSession editExercise(Long workoutId, int exerciseIndex, String text, byte[] audioBytes);
     WorkoutSession editExerciseById(Long workoutId, String exerciseId, String text, byte[] audioBytes);
     WorkoutSession removeExercise(Long workoutId, int exerciseIndex);

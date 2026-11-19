@@ -48,7 +48,7 @@ public class MealService {
     public Meal updateMeal(Long mealId, String text, byte[] audioBytes) {
         Meal meal = mealRepository.findById(mealId)
                 .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));
-        MealDto dto = geminiService.parseMeal(text, audioBytes);
+        MealDto dto = geminiService.parseMealUpdate(meal.getDescription(), text, audioBytes);
         validarMealDto(dto);
         meal.setRawInput(text != null ? text : "[Mensagem de Voz]");
         meal.setDescription(dto.getDescription() != null ? dto.getDescription() : "sem descrição");

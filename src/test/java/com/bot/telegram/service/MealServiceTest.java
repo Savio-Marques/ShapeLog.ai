@@ -73,18 +73,19 @@ class MealServiceTest {
     }
 
     @Test
-    void updateMeal_deveAtualizarDescricaoEMacros() {
+    void updateMeal_deveAtualizarDescricaoEMacrosUsandoContextoAnterior() {
         Meal mealExistente = Meal.builder().id(10L).user(testUser).description("Pão").calories(150).protein(4.0).carbs(28.0).fat(2.0).build();
         MealDto dtoNovo = MealDto.builder().description("Pão com manteiga").calories(250).protein(4.0).carbs(28.0).fat(12.0).build();
 
         when(mealRepository.findById(10L)).thenReturn(Optional.of(mealExistente));
-        when(geminiService.parseMeal(anyString(), any())).thenReturn(dtoNovo);
+        when(geminiService.parseMealUpdate(eq("Pão"), eq("adiciona manteiga"), isNull())).thenReturn(dtoNovo);
         when(mealRepository.save(any(Meal.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Meal mealAtualizada = mealService.updateMeal(10L, "Pão com manteiga", null);
+        Meal mealAtualizada = mealService.updateMeal(10L, "adiciona manteiga", null);
         assertEquals("Pão com manteiga", mealAtualizada.getDescription());
         assertEquals(250, mealAtualizada.getCalories());
         assertEquals(12.0, mealAtualizada.getFat());
+        verify(geminiService).parseMealUpdate("Pão", "adiciona manteiga", null);
     }
 
     @Test
@@ -117,7 +118,7 @@ class MealServiceTest {
         when(mealRepository.findById(10L)).thenReturn(Optional.of(mealExistente));
 
         MealDto dtoVazio = MealDto.builder().description("").calories(0).build();
-        when(geminiService.parseMeal(anyString(), any())).thenReturn(dtoVazio);
+        when(geminiService.parseMealUpdate(eq("Pão"), anyString(), any())).thenReturn(dtoVazio);
 
         assertThrows(IllegalArgumentException.class, () -> mealService.updateMeal(10L, "nada", null));
         verify(mealRepository, never()).save(any());

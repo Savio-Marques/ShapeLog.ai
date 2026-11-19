@@ -1,6 +1,7 @@
 package com.bot.telegram.formatter;
 
 import com.bot.telegram.dto.DailyReportDto;
+import com.bot.telegram.dto.GoalDto;
 import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
@@ -171,5 +172,84 @@ class MessageFormatterTest {
         assertTrue(formatted.contains("Supino Inclinado"));
         assertTrue(formatted.contains("12 reps"));
         assertTrue(formatted.contains("80 kg"));
+        assertTrue(formatted.indexOf("TOTAIS VS") < formatted.indexOf("REFEIÇÕES"));
+    }
+
+    @Test
+    void formatMealRegistered_comResumoDiario_deveExibirProgressoESaldo() {
+        UserTelegram user = UserTelegram.builder()
+                .targetCalories(2000)
+                .targetProtein(150)
+                .targetCarbs(200)
+                .targetFat(60)
+                .build();
+        Meal meal = Meal.builder()
+                .description("4 ovos mexidos (~200g)")
+                .calories(400)
+                .protein(28.0)
+                .carbs(4.0)
+                .fat(28.0)
+                .build();
+        DailyReportDto report = DailyReportDto.builder()
+                .user(user)
+                .meals(List.of(meal))
+                .workouts(List.of())
+                .totalCalories(1400)
+                .totalProtein(110.0)
+                .totalCarbs(140.0)
+                .totalFat(45.0)
+                .build();
+
+        String result = messageFormatter.formatMealRegistered(meal, report, LocalDate.now());
+        assertTrue(result.contains("Progresso \\(HOJE\\)"));
+        assertTrue(result.contains("1400 / 2000 kcal"));
+        assertTrue(result.contains("faltam 600 kcal"));
+        assertTrue(result.contains("110,0 / 150g"));
+        assertTrue(result.contains("faltam 40,0g"));
+    }
+
+    @Test
+    void formatGoalsUpdated_comDivergenciaCalorica_deveExibirAviso() {
+        String divergente = messageFormatter.formatGoalsUpdated(1000, 200, 200, 60);
+        assertTrue(divergente.contains("Atenção"));
+
+        String coerente = messageFormatter.formatGoalsUpdated(2350, 180, 250, 70);
+        assertFalse(coerente.contains("Atenção"));
+    }
+
+    @Test
+    void formatPendingInputPrompt_deveTratarTextoEVoz() {
+        String textPrompt = messageFormatter.formatPendingInputPrompt("comi 2 ovos! (manhã)", false);
+        assertTrue(textPrompt.contains("Mensagem recebida"));
+        assertTrue(textPrompt.contains("2 ovos\\!"));
+        assertTrue(textPrompt.contains("\\(manhã\\)"));
+
+        String voicePrompt = messageFormatter.formatPendingInputPrompt(null, true);
+        assertTrue(voicePrompt.contains("Áudio recebido\\!"));
+    }
+
+    @Test
+    void formatCurrentGoalsESuggestion_devemFormatarComSeguranca() {
+        UserTelegram user = UserTelegram.builder()
+                .targetCalories(2200)
+                .targetProtein(160)
+                .targetCarbs(220)
+                .targetFat(70)
+                .build();
+        String current = messageFormatter.formatCurrentGoals(user);
+        assertTrue(current.contains("2200 kcal"));
+        assertTrue(current.contains("160g"));
+
+        GoalDto dto = GoalDto.builder()
+                .calories(2100)
+                .protein(165)
+                .carbs(210)
+                .fat(65)
+                .explanation("Déficit moderado para 80kg.")
+                .build();
+        String suggestion = messageFormatter.formatGoalSuggestion(dto);
+        assertTrue(suggestion.contains("2100 kcal"));
+        assertTrue(suggestion.contains("Déficit moderado para 80kg\\."));
+        assertTrue(suggestion.contains("nutricionista"));
     }
 }

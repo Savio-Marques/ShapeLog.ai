@@ -297,4 +297,76 @@ class WorkoutServiceTest {
         assertTrue(updated.getExercisesJson().contains("Crucifixo Inclinado"));
         assertTrue(updated.getExercisesJson().contains("ex-2"));
     }
+
+    @Test
+    void createNewDraftWorkout_deveCriarNovaSessaoMesmoComTreinoExistenteHoje() {
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> {
+            WorkoutSession ws = inv.getArgument(0);
+            ws.setId(99L);
+            return ws;
+        });
+
+        WorkoutSession created = workoutService.createNewDraftWorkout(testUser, "Cardio", 301);
+        assertNotNull(created);
+        assertEquals(99L, created.getId());
+        assertEquals("Cardio", created.getRawInput());
+        assertEquals("[]", created.getExercisesJson());
+        verify(workoutRepository, never()).findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(any(), any(), any());
+    }
+
+    @Test
+    void addExercisesOrCreateWorkout_semTreinoHoje_deveCriarSessaoComTituloDaIA() {
+        WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(10).weight(70.0).build();
+        WorkoutDto.ExerciseDto ex = WorkoutDto.ExerciseDto.builder().name("Supino Inclinado").series(List.of(series)).build();
+        WorkoutDto dto = WorkoutDto.builder().description("Peito").durationMinutes(25).exercises(List.of(ex)).build();
+
+        when(geminiService.parseWorkout(eq("supino inclinado 10 reps 70kg"), isNull())).thenReturn(dto);
+        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+                .thenReturn(Optional.empty());
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> {
+            WorkoutSession ws = inv.getArgument(0);
+            ws.setId(77L);
+            return ws;
+        });
+
+        WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesOrCreateWorkout(testUser, "supino inclinado 10 reps 70kg", null, 401);
+        assertTrue(result.createdNewSession);
+        assertEquals("Peito", result.session.getRawInput());
+        assertEquals(25, result.session.getDurationMinutes());
+        assertEquals(1, result.addedExercises.size());
+    }
+
+    @Test
+    void addExercisesOrCreateWorkout_comTreinoHoje_deveReutilizarSessaoExistente() {
+        WorkoutSession existente = WorkoutSession.builder()
+                .id(88L)
+                .user(testUser)
+                .rawInput("Treino A")
+                .exercisesJson("[]")
+                .build();
+
+        WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(12).weight(50.0).build();
+        WorkoutDto.ExerciseDto ex = WorkoutDto.ExerciseDto.builder().name("Puxada Alta").series(List.of(series)).build();
+        WorkoutDto dto = WorkoutDto.builder().description("Costas").exercises(List.of(ex)).build();
+
+        when(geminiService.parseWorkout(eq("puxada alta 12 reps 50kg"), isNull())).thenReturn(dto);
+        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+                .thenReturn(Optional.of(existente));
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesOrCreateWorkout(testUser, "puxada alta 12 reps 50kg", null, 402);
+        assertFalse(result.createdNewSession);
+        assertEquals(88L, result.session.getId());
+        assertEquals("Treino A", result.session.getRawInput());
+    }
+
+    @Test
+    void addExercisesOrCreateWorkout_iaSemExercicios_naoDeveCriarSessaoNoBanco() {
+        WorkoutDto dtoVazio = WorkoutDto.builder().description("Nada").exercises(List.of()).build();
+        when(geminiService.parseWorkout(any(), any())).thenReturn(dtoVazio);
+
+        assertThrows(IllegalArgumentException.class, () ->
+                workoutService.addExercisesOrCreateWorkout(testUser, "texto inválido", null, 403));
+        verify(workoutRepository, never()).save(any());
+    }
 }

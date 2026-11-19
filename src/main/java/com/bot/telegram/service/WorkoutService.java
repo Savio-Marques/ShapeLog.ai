@@ -31,10 +31,17 @@ public class WorkoutService implements IWorkoutService {
         public final WorkoutSession session;
         public final int startIndex;
         public final List<WorkoutDto.ExerciseDto> addedExercises;
+        public final boolean createdNewSession;
+
         public WorkoutUpdateResult(WorkoutSession session, int startIndex, List<WorkoutDto.ExerciseDto> addedExercises) {
+            this(session, startIndex, addedExercises, false);
+        }
+
+        public WorkoutUpdateResult(WorkoutSession session, int startIndex, List<WorkoutDto.ExerciseDto> addedExercises, boolean createdNewSession) {
             this.session = session;
             this.startIndex = startIndex;
             this.addedExercises = addedExercises;
+            this.createdNewSession = createdNewSession;
         }
     }
 
@@ -49,25 +56,66 @@ public class WorkoutService implements IWorkoutService {
                 session.setUserMessageId(userMessageId);
             }
         } else {
-            session = WorkoutSession.builder()
-                    .user(user)
-                    .rawInput(title != null ? title : "Treino")
-                    .exercisesJson("[]")
-                    .createdAt(LocalDateTime.now())
-                    .userMessageId(userMessageId)
-                    .build();
+            session = buildNewSession(title, null, user, userMessageId);
             meterRegistry.counter("shapelog.workouts.created").increment();
         }
         return workoutRepository.save(session);
     }
 
+    @Override
+    @Transactional
+    public WorkoutSession createNewDraftWorkout(UserTelegram user, String title, Integer userMessageId) {
+        WorkoutSession session = buildNewSession(title, null, user, userMessageId);
+        meterRegistry.counter("shapelog.workouts.created").increment();
+        return workoutRepository.save(session);
+    }
+
+    private WorkoutSession buildNewSession(String title, String description, UserTelegram user, Integer userMessageId) {
+        return WorkoutSession.builder()
+                .user(user)
+                .rawInput(title != null && !title.isBlank() ? title.trim() : "Treino")
+                .description(description)
+                .exercisesJson("[]")
+                .createdAt(LocalDateTime.now())
+                .userMessageId(userMessageId)
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public WorkoutUpdateResult addExercisesOrCreateWorkout(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
+        WorkoutDto dto = parseAndValidateWorkout(text, audioBytes);
+        Optional<WorkoutSession> optLatest = getLatestWorkoutForToday(user);
+        boolean createdNewSession = optLatest.isEmpty();
+        WorkoutSession session;
+        if (createdNewSession) {
+            String inferredTitle = (dto.getDescription() != null && !dto.getDescription().isBlank())
+                    ? dto.getDescription().trim()
+                    : "Treino";
+            session = buildNewSession(inferredTitle, dto.getDescription(), user, userMessageId);
+            meterRegistry.counter("shapelog.workouts.created").increment();
+        } else {
+            session = optLatest.get();
+        }
+        return appendParsedExercises(session, dto, userMessageId, createdNewSession);
+    }
+
     public WorkoutUpdateResult addExercisesToDraft(Long workoutId, String text, byte[] audioBytes, Integer userMessageId) {
         WorkoutSession session = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
+        WorkoutDto dto = parseAndValidateWorkout(text, audioBytes);
+        return appendParsedExercises(session, dto, userMessageId, false);
+    }
+
+    private WorkoutDto parseAndValidateWorkout(String text, byte[] audioBytes) {
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
         if (dto == null || dto.getExercises() == null || dto.getExercises().isEmpty()) {
             throw new IllegalArgumentException("Não foi possível identificar nenhum exercício na sua mensagem. Envie os exercícios com séries e repetições (ex: Supino 3x10 80kg)!");
         }
+        return dto;
+    }
+
+    private WorkoutUpdateResult appendParsedExercises(WorkoutSession session, WorkoutDto dto, Integer userMessageId, boolean createdNewSession) {
         if (dto.getDurationMinutes() != null) {
             int existingDuration = session.getDurationMinutes() != null ? session.getDurationMinutes() : 0;
             session.setDurationMinutes(existingDuration + dto.getDurationMinutes());
@@ -82,7 +130,7 @@ public class WorkoutService implements IWorkoutService {
         if (userMessageId != null) {
             session.setUserMessageId(userMessageId);
         }
-        return new WorkoutUpdateResult(workoutRepository.save(session), startIndex, added);
+        return new WorkoutUpdateResult(workoutRepository.save(session), startIndex, added, createdNewSession);
     }
 
     public WorkoutSession editExercise(Long workoutId, int exerciseIndex, String text, byte[] audioBytes) {
