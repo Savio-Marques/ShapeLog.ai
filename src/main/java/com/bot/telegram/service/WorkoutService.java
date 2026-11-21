@@ -11,7 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,24 +23,31 @@ import java.util.function.Supplier;
 public class WorkoutService implements IWorkoutService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkoutService.class);
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final WorkoutSessionRepository workoutRepository;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate transactionTemplate;
+    private final ZoneId appZoneId;
 
     public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper, MeterRegistry meterRegistry) {
-        this(geminiService, workoutRepository, objectMapper, meterRegistry, null);
+        this(geminiService, workoutRepository, objectMapper, meterRegistry, null, DEFAULT_ZONE);
+    }
+
+    public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate) {
+        this(geminiService, workoutRepository, objectMapper, meterRegistry, transactionTemplate, DEFAULT_ZONE);
     }
 
     @Autowired
-    public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate) {
+    public WorkoutService(GeminiService geminiService, WorkoutSessionRepository workoutRepository, ObjectMapper objectMapper, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate, ZoneId appZoneId) {
         this.geminiService = geminiService;
         this.workoutRepository = workoutRepository;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
         this.transactionTemplate = transactionTemplate;
+        this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
     private <T> T inTransaction(Supplier<T> action) {
@@ -97,7 +106,7 @@ public class WorkoutService implements IWorkoutService {
                 .rawInput(title != null && !title.isBlank() ? title.trim() : "Treino")
                 .description(description)
                 .exercisesJson("[]")
-                .createdAt(LocalDateTime.now())
+                .createdAt(Instant.now())
                 .userMessageId(userMessageId)
                 .build();
     }
@@ -295,20 +304,21 @@ public class WorkoutService implements IWorkoutService {
         return workoutRepository.existsById(workoutId);
     }
 
-    public List<WorkoutSession> getWorkoutsForDate(UserTelegram user, java.time.LocalDate date) {
-        LocalDateTime start = date.atStartOfDay();
-        LocalDateTime end = date.atTime(java.time.LocalTime.MAX);
-        return workoutRepository.findByUserAndCreatedAtBetweenOrderByIdAsc(user, start, end);
+    public List<WorkoutSession> getWorkoutsForDate(UserTelegram user, LocalDate date) {
+        Instant start = date.atStartOfDay(appZoneId).toInstant();
+        Instant end = date.plusDays(1).atStartOfDay(appZoneId).toInstant();
+        return workoutRepository.findByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(user, start, end);
     }
 
     public Optional<WorkoutSession> getLatestWorkoutForToday(UserTelegram user) {
-        LocalDateTime start = java.time.LocalDate.now().atStartOfDay();
-        LocalDateTime end = java.time.LocalDate.now().atTime(java.time.LocalTime.MAX);
-        return workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(user, start, end);
+        LocalDate today = LocalDate.now(appZoneId);
+        Instant start = today.atStartOfDay(appZoneId).toInstant();
+        Instant end = today.plusDays(1).atStartOfDay(appZoneId).toInstant();
+        return workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(user, start, end);
     }
 
     public List<WorkoutSession> getWorkoutsForToday(UserTelegram user) {
-        return getWorkoutsForDate(user, java.time.LocalDate.now());
+        return getWorkoutsForDate(user, LocalDate.now(appZoneId));
     }
 
     private String serializeExercises(List<WorkoutDto.ExerciseDto> exercises) {

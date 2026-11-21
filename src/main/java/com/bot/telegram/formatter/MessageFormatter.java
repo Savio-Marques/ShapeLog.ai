@@ -7,9 +7,11 @@ import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.model.WorkoutSession;
 import com.bot.telegram.service.IWorkoutService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -21,11 +23,19 @@ public class MessageFormatter {
     private static final int DEFAULT_CARBS = 200;
     private static final int DEFAULT_FAT = 60;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final IWorkoutService workoutService;
+    private final ZoneId appZoneId;
 
     public MessageFormatter(IWorkoutService workoutService) {
+        this(workoutService, DEFAULT_ZONE);
+    }
+
+    @Autowired
+    public MessageFormatter(IWorkoutService workoutService, ZoneId appZoneId) {
         this.workoutService = workoutService;
+        this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
     public String escapeMarkdown(String text) {
@@ -206,12 +216,12 @@ public class MessageFormatter {
     }
 
     public String formatDailyReport(DailyReportDto report) {
-        return formatDailyReport(report, LocalDate.now());
+        return formatDailyReport(report, LocalDate.now(appZoneId));
     }
 
     public String formatDailyReport(DailyReportDto report, LocalDate date) {
-        LocalDate safeDate = date != null ? date : LocalDate.now();
-        LocalDate today = LocalDate.now();
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
+        LocalDate today = LocalDate.now(appZoneId);
         String emptySuffix = safeDate.equals(today) ? "hoje\\." : "neste dia\\.";
 
         List<Meal> meals = (report != null && report.getMeals() != null) ? report.getMeals() : List.of();
@@ -321,7 +331,7 @@ public class MessageFormatter {
     }
 
     private String formatDateHeader(LocalDate date) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(appZoneId);
         if (date.equals(today)) {
             return "HOJE";
         }

@@ -8,7 +8,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -16,21 +18,29 @@ import java.util.function.Supplier;
 @Service
 public class MealService {
 
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
+
     private final MealRepository mealRepository;
     private final GeminiService geminiService;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate transactionTemplate;
+    private final ZoneId appZoneId;
 
     public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry) {
-        this(mealRepository, geminiService, meterRegistry, null);
+        this(mealRepository, geminiService, meterRegistry, null, DEFAULT_ZONE);
+    }
+
+    public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate) {
+        this(mealRepository, geminiService, meterRegistry, transactionTemplate, DEFAULT_ZONE);
     }
 
     @Autowired
-    public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate) {
+    public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate, ZoneId appZoneId) {
         this.mealRepository = mealRepository;
         this.geminiService = geminiService;
         this.meterRegistry = meterRegistry;
         this.transactionTemplate = transactionTemplate;
+        this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
     private <T> T inTransaction(Supplier<T> action) {
@@ -56,7 +66,7 @@ public class MealService {
                 .carbs(dto.getCarbs() != null ? dto.getCarbs() : 0.0)
                 .fat(dto.getFat() != null ? dto.getFat() : 0.0)
                 .userMessageId(userMessageId)
-                .createdAt(LocalDateTime.now())
+                .createdAt(Instant.now())
                 .build();
         return inTransaction(() -> {
             Meal saved = mealRepository.save(meal);
@@ -123,13 +133,13 @@ public class MealService {
         return mealRepository.existsById(mealId);
     }
 
-    public List<Meal> getMealsForDate(UserTelegram user, java.time.LocalDate date) {
-        LocalDateTime start = date.atStartOfDay();
-        LocalDateTime end = date.atTime(java.time.LocalTime.MAX);
-        return mealRepository.findByUserAndCreatedAtBetweenOrderByIdAsc(user, start, end);
+    public List<Meal> getMealsForDate(UserTelegram user, LocalDate date) {
+        Instant start = date.atStartOfDay(appZoneId).toInstant();
+        Instant end = date.plusDays(1).atStartOfDay(appZoneId).toInstant();
+        return mealRepository.findByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(user, start, end);
     }
 
     public List<Meal> getMealsForToday(UserTelegram user) {
-        return getMealsForDate(user, java.time.LocalDate.now());
+        return getMealsForDate(user, LocalDate.now(appZoneId));
     }
 }

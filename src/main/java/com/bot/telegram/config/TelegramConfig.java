@@ -4,13 +4,17 @@ import com.bot.telegram.bot.FitnessBot;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.telegram.telegrambots.meta.TelegramBotsApi;
+import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
+import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
-import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
+
+import java.time.ZoneId;
 
 @Configuration
 @EnableScheduling
@@ -23,38 +27,42 @@ public class TelegramConfig {
         return new ObjectMapper();
     }
 
+    @Bean
+    public ZoneId appZoneId(@Value("${shapelog.timezone:America/Sao_Paulo}") String timezone) {
+        return ZoneId.of(timezone);
+    }
+
     @Bean(name = "geminiExecutor")
-    public ThreadPoolTaskExecutor geminiExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(8);
-        executor.setQueueCapacity(32);
-        executor.setThreadNamePrefix("gemini-io-");
-        executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(15);
-        executor.initialize();
+    public SimpleAsyncTaskExecutor geminiExecutor() {
+        SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor("gemini-vt-");
+        executor.setVirtualThreads(true);
+        executor.setConcurrencyLimit(16);
+        executor.setTaskTerminationTimeout(15_000L);
         return executor;
     }
 
     @Bean(name = "botUpdateExecutor")
-    public ThreadPoolTaskExecutor botUpdateExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(8);
-        executor.setQueueCapacity(100);
-        executor.setThreadNamePrefix("bot-update-");
-        executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(15);
-        executor.initialize();
+    public SimpleAsyncTaskExecutor botUpdateExecutor() {
+        SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor("bot-vt-");
+        executor.setVirtualThreads(true);
+        executor.setConcurrencyLimit(32);
+        executor.setTaskTerminationTimeout(15_000L);
         return executor;
     }
 
     @Bean
-    public TelegramBotsApi telegramBotsApi(FitnessBot fitnessBot) throws TelegramApiException {
-        log.info("Registrando bot no Telegram...");
-        TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
-        botsApi.registerBot(fitnessBot);
+    public TelegramClient telegramClient(@Value("${telegram.bot.token}") String botToken) {
+        return new OkHttpTelegramClient(botToken);
+    }
+
+    @Bean(destroyMethod = "close")
+    public TelegramBotsLongPollingApplication telegramBotsLongPollingApplication(
+            FitnessBot fitnessBot,
+            @Value("${telegram.bot.token}") String botToken) throws TelegramApiException {
+        log.info("Registrando bot no Telegram (Long Polling)...");
+        TelegramBotsLongPollingApplication app = new TelegramBotsLongPollingApplication();
+        app.registerBot(botToken, fitnessBot);
         log.info("Bot registrado com sucesso.");
-        return botsApi;
+        return app;
     }
 }

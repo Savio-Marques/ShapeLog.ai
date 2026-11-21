@@ -2,10 +2,12 @@ package com.bot.telegram.service;
 
 import com.bot.telegram.dto.MealDto;
 import com.bot.telegram.dto.WorkoutDto;
+import com.bot.telegram.exception.RateLimitExceededException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.MDC;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -112,6 +114,39 @@ class GeminiServiceTest {
             assertEquals("gemini-custom-test", threadName.get());
         } finally {
             customExecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    void executeWithMetrics_devePropagarMdcEAplicarRateLimitPorChatId() {
+        RateLimiterService rateLimiter = new RateLimiterService(1, 10, new SimpleMeterRegistry());
+        ExecutorService vtExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            GeminiService service = new GeminiService(chatModel, new SimpleMeterRegistry(), vtExecutor, rateLimiter);
+            AtomicReference<String> mdcInsideWorker = new AtomicReference<>();
+            String json = """
+                    {
+                      "description": "maçã (~130g)",
+                      "calories": 70,
+                      "protein": 0.3,
+                      "carbs": 18.0,
+                      "fat": 0.2
+                    }
+                    """;
+            when(chatModel.call(any(Prompt.class))).thenAnswer(inv -> {
+                mdcInsideWorker.set(MDC.get("chatId"));
+                return new ChatResponse(List.of(new Generation(new AssistantMessage(json))));
+            });
+
+            MDC.put("chatId", "12345");
+            MealDto first = service.parseMeal("1 maçã", null);
+            assertNotNull(first);
+            assertEquals("12345", mdcInsideWorker.get());
+
+            assertThrows(RateLimitExceededException.class, () -> service.parseMeal("outra maçã", null));
+        } finally {
+            MDC.clear();
+            vtExecutor.shutdownNow();
         }
     }
 }

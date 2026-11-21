@@ -1,7 +1,11 @@
 package com.bot.telegram.model;
+
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
 
 @Entity
 @Table(name = "workout_sessions", indexes = {@Index(name = "idx_workout_user_created", columnList = "user_id, createdAt")})
@@ -28,10 +32,10 @@ public class WorkoutSession {
 
     private Integer durationMinutes;
 
-    @Column(columnDefinition = "TEXT")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String exercisesJson;
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     private Integer userMessageId;
     private Integer botMessageId;

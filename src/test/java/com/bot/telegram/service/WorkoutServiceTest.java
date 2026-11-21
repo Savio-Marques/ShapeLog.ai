@@ -49,7 +49,7 @@ class WorkoutServiceTest {
 
     @Test
     void createOrUpdateDraftWorkout_novoTreino_deveCriarComTituloEListaVazia() {
-        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
                 .thenReturn(Optional.empty());
         when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> {
             WorkoutSession ws = inv.getArgument(0);
@@ -75,7 +75,7 @@ class WorkoutServiceTest {
                 .exercisesJson("[]")
                 .build();
 
-        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
                 .thenReturn(Optional.of(existente));
         when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -239,7 +239,7 @@ class WorkoutServiceTest {
         WorkoutDto dto = WorkoutDto.builder().description("Peito").exercises(List.of(ex)).build();
 
         when(geminiService.parseWorkout("supino 10 reps 80kg", null)).thenReturn(dto);
-        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
                 .thenReturn(Optional.empty());
         when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> {
             WorkoutSession ws = inv.getArgument(0);
@@ -270,7 +270,7 @@ class WorkoutServiceTest {
     @Test
     void getWorkoutsForDate_deveRetornarApenasDoPeriodo() {
         WorkoutSession ws = WorkoutSession.builder().id(1L).rawInput("Treino Hoje").build();
-        when(workoutRepository.findByUserAndCreatedAtBetweenOrderByIdAsc(eq(testUser), any(), any()))
+        when(workoutRepository.findByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(eq(testUser), any(), any()))
                 .thenReturn(List.of(ws));
 
         List<WorkoutSession> list = workoutService.getWorkoutsForDate(testUser, LocalDate.now());
@@ -347,7 +347,7 @@ class WorkoutServiceTest {
         assertEquals(99L, created.getId());
         assertEquals("Cardio", created.getRawInput());
         assertEquals("[]", created.getExercisesJson());
-        verify(workoutRepository, never()).findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(any(), any(), any());
+        verify(workoutRepository, never()).findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(any(), any(), any());
     }
 
     @Test
@@ -357,7 +357,7 @@ class WorkoutServiceTest {
         WorkoutDto dto = WorkoutDto.builder().description("Peito").durationMinutes(25).exercises(List.of(ex)).build();
 
         when(geminiService.parseWorkout(eq("supino inclinado 10 reps 70kg"), isNull())).thenReturn(dto);
-        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
                 .thenReturn(Optional.empty());
         when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> {
             WorkoutSession ws = inv.getArgument(0);
@@ -386,7 +386,7 @@ class WorkoutServiceTest {
         WorkoutDto dto = WorkoutDto.builder().description("Costas").exercises(List.of(ex)).build();
 
         when(geminiService.parseWorkout(eq("puxada alta 12 reps 50kg"), isNull())).thenReturn(dto);
-        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
                 .thenReturn(Optional.of(existente));
         when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
 

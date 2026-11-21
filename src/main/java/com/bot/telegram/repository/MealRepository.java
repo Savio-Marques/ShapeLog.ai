@@ -1,14 +1,16 @@
 package com.bot.telegram.repository;
+
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-import java.time.LocalDateTime;
+
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface MealRepository extends JpaRepository<Meal, Long> {
     Optional<Meal> findByIdAndUserId(Long id, Long userId);
-    List<Meal> findByUserAndCreatedAtBetweenOrderByIdAsc(UserTelegram user, LocalDateTime start, LocalDateTime end);
+    List<Meal> findByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(UserTelegram user, Instant start, Instant end);
 }

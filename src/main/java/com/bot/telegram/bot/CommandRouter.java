@@ -15,10 +15,12 @@ import com.bot.telegram.service.MealService;
 import com.bot.telegram.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +30,7 @@ import java.util.regex.Pattern;
 public class CommandRouter {
 
     private static final Logger log = LoggerFactory.getLogger(CommandRouter.class);
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
     private static final Pattern EXERCISE_INPUT_PATTERN = Pattern.compile(
             "(?i).*(\\d+\\s*[xX×]\\s*\\d+|\\d+\\s*(kg|quilos?|reps?|repeti[cç][õo]es|s[eé]ries?|min|minutos?|h|horas?|km|m\\b|metros?|rounds?|cal|kcal)|\\b(amrap|emom|for\\s+time)\\b).*"
     );
@@ -42,6 +45,7 @@ public class CommandRouter {
     private final IWorkoutService workoutService;
     private final StateManager stateManager;
     private final UserService userService;
+    private final ZoneId appZoneId;
 
     @Value("${telegram.bot.admin-id:0}")
     private Long adminId;
@@ -51,6 +55,17 @@ public class CommandRouter {
                          MessageFormatter messageFormatter, InlineKeyboardFactory keyboardFactory,
                          MealService mealService, IWorkoutService workoutService,
                          StateManager stateManager, UserService userService) {
+        this(mealHandler, workoutHandler, reportHandler, goalHandler, messageFormatter, keyboardFactory,
+                mealService, workoutService, stateManager, userService, DEFAULT_ZONE);
+    }
+
+    @Autowired
+    public CommandRouter(MealHandler mealHandler, WorkoutHandler workoutHandler,
+                         ReportHandler reportHandler, GoalHandler goalHandler,
+                         MessageFormatter messageFormatter, InlineKeyboardFactory keyboardFactory,
+                         MealService mealService, IWorkoutService workoutService,
+                         StateManager stateManager, UserService userService,
+                         ZoneId appZoneId) {
         this.mealHandler = mealHandler;
         this.workoutHandler = workoutHandler;
         this.reportHandler = reportHandler;
@@ -61,6 +76,7 @@ public class CommandRouter {
         this.workoutService = workoutService;
         this.stateManager = stateManager;
         this.userService = userService;
+        this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
     public void rotearComando(UserTelegram user, String text, int userMessageId, long chatId, BotActionSender sender) {
@@ -363,7 +379,7 @@ public class CommandRouter {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
                     return;
                 }
-                LocalDate date = meal.getCreatedAt() != null ? meal.getCreatedAt().toLocalDate() : LocalDate.now();
+                LocalDate date = meal.getCreatedAt() != null ? meal.getCreatedAt().atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
                 mealService.deleteMeal(mealId);
                 reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
             } else if (data.startsWith("del_rep_w:")) {
@@ -373,7 +389,7 @@ public class CommandRouter {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }
-                LocalDate date = ws.getCreatedAt() != null ? ws.getCreatedAt().toLocalDate() : LocalDate.now();
+                LocalDate date = ws.getCreatedAt() != null ? ws.getCreatedAt().atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
                 workoutService.deleteWorkout(workoutId);
                 reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
             }

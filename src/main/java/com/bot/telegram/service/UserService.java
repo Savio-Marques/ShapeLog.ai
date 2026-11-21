@@ -5,7 +5,7 @@ import com.bot.telegram.repository.UserTelegramRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,7 +43,7 @@ public class UserService {
                     .id(id)
                     .username(username)
                     .firstName(firstName)
-                    .registeredAt(LocalDateTime.now())
+                    .registeredAt(Instant.now())
                     .targetCalories(2000)
                     .targetProtein(150)
                     .targetCarbs(200)

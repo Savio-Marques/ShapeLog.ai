@@ -1,0 +1,205 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: shapelog-alerts
+    folder: ShapeLog
+    interval: 1m
+    rules:
+      - uid: shapelog_bot_offline
+        title: ShapeLog Bot Offline
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: up{job="shapelog-bot"}
+              instant: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: "__expr__"
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    type: last
+                  type: query
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: "ShapeLog Bot indisponivel no Prometheus"
+          description: "O endpoint /actuator/prometheus do shapelog-bot nao esta respondendo (up < 1)."
+        labels:
+          severity: critical
+          service: shapelog
+
+      - uid: shapelog_gemini_errors
+        title: Erros no Gemini
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: sum(increase(shapelog_gemini_errors_total[5m]))
+              instant: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+              conditions:
+                - evaluator:
+                    params:
+                      - 2
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    type: last
+                  type: query
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Taxa elevada de falhas na API do Gemini"
+          description: "Mais de 2 erros acumulados no Gemini nos ultimos 5 minutos."
+        labels:
+          severity: warning
+          service: shapelog
+
+      - uid: shapelog_bot_errors
+        title: Erros no Bot
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: increase(shapelog_bot_errors_total[5m])
+              instant: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+              conditions:
+                - evaluator:
+                    params:
+                      - 4
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    type: last
+                  type: query
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Excecoes inesperadas no ShapeLog Bot"
+          description: "Mais de 4 erros registrados no processamento de updates do bot nos ultimos 5 minutos."
+        labels:
+          severity: warning
+          service: shapelog

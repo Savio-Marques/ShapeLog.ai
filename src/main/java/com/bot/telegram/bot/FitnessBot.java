@@ -1,5 +1,6 @@
 package com.bot.telegram.bot;
 
+import com.bot.telegram.exception.RateLimitExceededException;
 import com.bot.telegram.formatter.MessageFormatter;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.service.UserService;
@@ -7,25 +8,27 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
-import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
-import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.Voice;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
 
-import java.io.File;
-import java.nio.file.Files;
+import java.io.InputStream;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -33,22 +36,17 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
-public class FitnessBot extends TelegramLongPollingBot implements BotActionSender {
+public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
 
     private static final Logger log = LoggerFactory.getLogger(FitnessBot.class);
     static final long MAX_VOICE_FILE_SIZE_BYTES = 2L * 1024 * 1024;
     static final int MAX_VOICE_DURATION_SECONDS = 120;
     static final long ADMIN_NOTIFY_COOLDOWN_MS = 24L * 60 * 60 * 1000L;
 
-    @Value("${telegram.bot.username}")
-    private String botUsername;
-
-    @Value("${telegram.bot.token}")
-    private String botToken;
-
     @Value("${telegram.bot.admin-id:0}")
     private Long adminId;
 
+    private final TelegramClient telegramClient;
     private final UserService userService;
     private final CommandRouter commandRouter;
     private final MessageFormatter messageFormatter;
@@ -58,24 +56,25 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     private final ConcurrentHashMap<Long, Long> adminNotifiedAt = new ConcurrentHashMap<>();
 
     public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter, MeterRegistry meterRegistry) {
-        this(userService, commandRouter, messageFormatter, meterRegistry, Runnable::run);
+        this(null, userService, commandRouter, messageFormatter, meterRegistry, Runnable::run);
+    }
+
+    public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter, MeterRegistry meterRegistry,
+                      Executor botUpdateExecutor) {
+        this(null, userService, commandRouter, messageFormatter, meterRegistry, botUpdateExecutor);
     }
 
     @Autowired
-    public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter, MeterRegistry meterRegistry,
+    public FitnessBot(TelegramClient telegramClient, UserService userService, CommandRouter commandRouter,
+                      MessageFormatter messageFormatter, MeterRegistry meterRegistry,
                       @Qualifier("botUpdateExecutor") Executor botUpdateExecutor) {
+        this.telegramClient = telegramClient;
         this.userService = userService;
         this.commandRouter = commandRouter;
         this.messageFormatter = messageFormatter;
         this.meterRegistry = meterRegistry;
         this.botUpdateExecutor = botUpdateExecutor;
     }
-
-    @Override
-    public String getBotUsername() { return this.botUsername; }
-
-    @Override
-    public String getBotToken() { return this.botToken; }
 
     private boolean isUserAllowed(UserTelegram user, Long chatId) {
         if (adminId != null && adminId > 0 && adminId.equals(chatId)) {
@@ -123,7 +122,16 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     }
 
     @Override
-    public void onUpdateReceived(Update update) {
+    public void consume(List<Update> updates) {
+        if (updates == null) {
+            return;
+        }
+        for (Update update : updates) {
+            consume(update);
+        }
+    }
+
+    public void consume(Update update) {
         Long chatId = extractChatId(update);
         if (chatId == null) {
             botUpdateExecutor.execute(() -> processUpdate(update));
@@ -155,7 +163,13 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     void processUpdate(Update update) {
         Timer.Sample sample = Timer.start(meterRegistry);
-        Long chatId = null;
+        Long chatId = extractChatId(update);
+        if (update != null && update.getUpdateId() != null) {
+            MDC.put("updateId", String.valueOf(update.getUpdateId()));
+        }
+        if (chatId != null) {
+            MDC.put("chatId", String.valueOf(chatId));
+        }
         try {
             if (update.hasCallbackQuery() && update.getCallbackQuery().getMessage() != null) {
                 meterRegistry.counter("shapelog.bot.updates", "type", "callback").increment();
@@ -224,24 +238,21 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
             }
         } finally {
             sample.stop(meterRegistry.timer("shapelog.bot.update.duration"));
+            MDC.clear();
         }
     }
 
     byte[] obterBytesDoAudio(String fileId) {
-        File fileLocal = null;
         try {
-            GetFile getFile = new GetFile();
-            getFile.setFileId(fileId);
-            org.telegram.telegrambots.meta.api.objects.File fileTelegram = execute(getFile);
-            fileLocal = downloadFile(fileTelegram);
-            return Files.readAllBytes(fileLocal.toPath());
+            org.telegram.telegrambots.meta.api.objects.File fileTelegram = telegramClient.execute(
+                    GetFile.builder().fileId(fileId).build()
+            );
+            try (InputStream is = telegramClient.downloadFileAsStream(fileTelegram)) {
+                return is.readAllBytes();
+            }
         } catch (Exception e) {
             log.error("Erro ao baixar áudio fileId={}", fileId, e);
             return null;
-        } finally {
-            if (fileLocal != null && fileLocal.exists()) {
-                fileLocal.delete();
-            }
         }
     }
 
@@ -252,11 +263,12 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public Message enviarMensagemRetornando(long chatId, String texto) {
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText(texto);
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(texto)
+                .build();
         try {
-            return execute(message);
+            return telegramClient.execute(message);
         } catch (TelegramApiException e) {
             log.warn("Falha ao enviar mensagem simples para chatId={}: {}", chatId, e.getMessage());
             return null;
@@ -265,11 +277,12 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public void deletarMensagem(long chatId, int messageId) {
-        DeleteMessage delete = new DeleteMessage();
-        delete.setChatId(String.valueOf(chatId));
-        delete.setMessageId(messageId);
+        DeleteMessage delete = DeleteMessage.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .build();
         try {
-            execute(delete);
+            telegramClient.execute(delete);
         } catch (TelegramApiException e) {
             log.warn("Falha ao deletar mensagem id={} no chatId={}: {}", messageId, chatId, e.getMessage());
         }
@@ -282,15 +295,15 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public Message enviarMensagemMarkdown(long chatId, String texto, InlineKeyboardMarkup keyboard) {
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText(texto);
-        message.setParseMode("MarkdownV2");
+        SendMessage.SendMessageBuilder<?, ?> builder = SendMessage.builder()
+                .chatId(chatId)
+                .text(texto)
+                .parseMode("MarkdownV2");
         if (keyboard != null) {
-            message.setReplyMarkup(keyboard);
+            builder.replyMarkup(keyboard);
         }
         try {
-            return execute(message);
+            return telegramClient.execute(builder.build());
         } catch (TelegramApiException e) {
             log.warn("Falha ao enviar mensagem MarkdownV2 para chatId={}: {}", chatId, e.getMessage());
             return null;
@@ -299,16 +312,16 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
 
     @Override
     public void editarMensagemBot(long chatId, int messageId, String novoTexto, InlineKeyboardMarkup keyboard) {
-        EditMessageText edit = new EditMessageText();
-        edit.setChatId(String.valueOf(chatId));
-        edit.setMessageId(messageId);
-        edit.setText(novoTexto);
-        edit.setParseMode("MarkdownV2");
+        EditMessageText.EditMessageTextBuilder<?, ?> builder = EditMessageText.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .text(novoTexto)
+                .parseMode("MarkdownV2");
         if (keyboard != null) {
-            edit.setReplyMarkup(keyboard);
+            builder.replyMarkup(keyboard);
         }
         try {
-            execute(edit);
+            telegramClient.execute(builder.build());
         } catch (TelegramApiException e) {
             if (e.getMessage() != null && e.getMessage().contains("message is not modified")) {
                 log.debug("Mensagem id={} no chatId={} não foi modificada (conteúdo idêntico).", messageId, chatId);
@@ -329,6 +342,9 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
             if (cause instanceof OptimisticLockingFailureException) {
                 return "Este treino foi alterado ao mesmo tempo por outra ação. Tente novamente!";
             }
+            if (cause instanceof RateLimitExceededException) {
+                return cause.getMessage();
+            }
             String msg = cause.getMessage();
             if (msg != null) {
                 if (msg.contains("RESOURCE_EXHAUSTED") || msg.contains("429")) {
@@ -344,10 +360,11 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     }
 
     private void responderCallback(String callbackQueryId) {
-        AnswerCallbackQuery answer = new AnswerCallbackQuery();
-        answer.setCallbackQueryId(callbackQueryId);
+        AnswerCallbackQuery answer = AnswerCallbackQuery.builder()
+                .callbackQueryId(callbackQueryId)
+                .build();
         try {
-            execute(answer);
+            telegramClient.execute(answer);
         } catch (TelegramApiException e) {
             log.warn("Falha ao confirmar callback id={}: {}", callbackQueryId, e.getMessage());
         }

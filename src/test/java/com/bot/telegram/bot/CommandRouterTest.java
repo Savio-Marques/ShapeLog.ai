@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -317,7 +317,7 @@ class CommandRouterTest {
         Meal meal = Meal.builder()
                 .id(10L)
                 .user(user)
-                .createdAt(LocalDateTime.now())
+                .createdAt(Instant.now())
                 .build();
         when(mealService.findByIdAndUserId(10L, USER_ID)).thenReturn(Optional.of(meal));
 
@@ -331,7 +331,7 @@ class CommandRouterTest {
         WorkoutSession ws = WorkoutSession.builder()
                 .id(20L)
                 .user(user)
-                .createdAt(LocalDateTime.now())
+                .createdAt(Instant.now())
                 .build();
         when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.of(ws));
 

@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -22,6 +23,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -37,16 +39,24 @@ public class GeminiService {
     private final ChatClient chatClient;
     private final MeterRegistry meterRegistry;
     private final Executor geminiExecutor;
+    private final RateLimiterService rateLimiterService;
 
     public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry) {
-        this(chatModel, meterRegistry, Runnable::run);
+        this(chatModel, meterRegistry, Runnable::run, null);
+    }
+
+    public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry, @Qualifier("geminiExecutor") Executor geminiExecutor) {
+        this(chatModel, meterRegistry, geminiExecutor, null);
     }
 
     @Autowired
-    public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry, @Qualifier("geminiExecutor") Executor geminiExecutor) {
+    public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry,
+                         @Qualifier("geminiExecutor") Executor geminiExecutor,
+                         RateLimiterService rateLimiterService) {
         this.chatClient = ChatClient.create(chatModel);
         this.meterRegistry = meterRegistry;
         this.geminiExecutor = geminiExecutor;
+        this.rateLimiterService = rateLimiterService;
     }
 
     public MealDto parseMeal(String text, byte[] audioBytes) {
@@ -190,9 +200,29 @@ public class GeminiService {
     }
 
     private <T> T executeWithMetrics(String metricType, Supplier<T> supplier) {
+        if (rateLimiterService != null) {
+            rateLimiterService.checkAllowed(parseMdcChatId());
+        }
         meterRegistry.counter("shapelog.gemini.calls", "type", metricType).increment();
         Timer.Sample sample = Timer.start(meterRegistry);
-        CompletableFuture<T> future = CompletableFuture.supplyAsync(supplier, geminiExecutor);
+        Map<String, String> mdcContext = MDC.getCopyOfContextMap();
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
+            Map<String, String> previousMdc = MDC.getCopyOfContextMap();
+            if (mdcContext != null) {
+                MDC.setContextMap(mdcContext);
+            } else {
+                MDC.clear();
+            }
+            try {
+                return supplier.get();
+            } finally {
+                if (previousMdc != null) {
+                    MDC.setContextMap(previousMdc);
+                } else {
+                    MDC.clear();
+                }
+            }
+        }, geminiExecutor);
         try {
             T result = future.get(GEMINI_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             sample.stop(meterRegistry.timer("shapelog.gemini.call.duration", "type", metricType));
@@ -201,6 +231,18 @@ public class GeminiService {
             future.cancel(true);
             meterRegistry.counter("shapelog.gemini.errors", "type", metricType).increment();
             throw new RuntimeException("Erro ao chamar API do Gemini (timeout ou falha): " + e.getMessage(), e);
+        }
+    }
+
+    private Long parseMdcChatId() {
+        String raw = MDC.get("chatId");
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException ignored) {
+            return null;
         }
     }
 }

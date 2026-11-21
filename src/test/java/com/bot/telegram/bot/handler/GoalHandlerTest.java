@@ -10,7 +10,7 @@ import com.bot.telegram.service.IWorkoutService;
 import com.bot.telegram.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.telegram.telegrambots.meta.api.objects.Message;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 
 import static org.mockito.ArgumentMatchers.*;

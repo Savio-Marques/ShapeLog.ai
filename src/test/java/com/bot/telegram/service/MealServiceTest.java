@@ -97,7 +97,7 @@ class MealServiceTest {
     @Test
     void getMealsForDate_deveRetornarApenasDoDiaCorreto() {
         Meal m = Meal.builder().id(1L).description("Almoço").build();
-        when(mealRepository.findByUserAndCreatedAtBetweenOrderByIdAsc(eq(testUser), any(), any())).thenReturn(List.of(m));
+        when(mealRepository.findByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(eq(testUser), any(), any())).thenReturn(List.of(m));
 
         List<Meal> meals = mealService.getMealsForDate(testUser, LocalDate.now());
         assertEquals(1, meals.size());

@@ -11,11 +11,11 @@ import com.bot.telegram.service.MealService;
 import com.bot.telegram.service.ReportService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.telegram.telegrambots.meta.api.objects.Message;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
@@ -65,7 +65,7 @@ class MealHandlerTest {
                 .protein(14.0)
                 .carbs(1.0)
                 .fat(15.0)
-                .createdAt(LocalDateTime.now())
+                .createdAt(Instant.now())
                 .build();
 
         DailyReportDto report = DailyReportDto.builder()
@@ -108,7 +108,7 @@ class MealHandlerTest {
                 .carbs(1.5)
                 .fat(22.0)
                 .botMessageId(20)
-                .createdAt(LocalDateTime.now())
+                .createdAt(Instant.now())
                 .build();
 
         DailyReportDto report = DailyReportDto.builder()

@@ -5,60 +5,68 @@ import com.bot.telegram.dto.GoalDto;
 import com.bot.telegram.dto.WorkoutDto;
 import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.WorkoutSession;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
 @Component
 public class InlineKeyboardFactory {
 
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
+
+    private final ZoneId appZoneId;
+
+    public InlineKeyboardFactory() {
+        this(DEFAULT_ZONE);
+    }
+
+    @Autowired
+    public InlineKeyboardFactory(ZoneId appZoneId) {
+        this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
+    }
+
     public InlineKeyboardMarkup criarBotoesRefeicao(Long mealId) {
-        return criarBotoesRefeicao(mealId, LocalDate.now());
+        return criarBotoesRefeicao(mealId, LocalDate.now(appZoneId));
     }
 
     public InlineKeyboardMarkup criarBotoesRefeicao(Long mealId, LocalDate date) {
-        LocalDate safeDate = date != null ? date : LocalDate.now();
-        InlineKeyboardButton btnEdit = button("✏️ Editar", "edit_meal:" + mealId);
-        InlineKeyboardButton btnDel = button("❌ Excluir", "delete_meal:" + mealId);
-        InlineKeyboardButton btnReport = button("📊 Ver Relatório", "open_report:" + safeDate);
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(
-                List.of(btnEdit, btnDel),
-                List.of(btnReport)
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
+        return markup(List.of(
+                new InlineKeyboardRow(
+                        button("✏️ Editar", "edit_meal:" + mealId),
+                        button("❌ Excluir", "delete_meal:" + mealId)
+                ),
+                new InlineKeyboardRow(button("📊 Ver Relatório", "open_report:" + safeDate))
         ));
-        return markup;
     }
 
     public InlineKeyboardMarkup criarBotoesConfirmacaoEntrada(String token) {
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(
-                List.of(
+        return markup(List.of(
+                new InlineKeyboardRow(
                         button("🥗 Refeição", "pending_meal:" + token),
                         button("💪 Exercício", "pending_exercise:" + token)
                 ),
-                List.of(button("✖️ Cancelar", "pending_cancel:" + token))
+                new InlineKeyboardRow(button("✖️ Cancelar", "pending_cancel:" + token))
         ));
-        return markup;
     }
 
     public InlineKeyboardMarkup criarBotaoCancelarEstado() {
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(List.of(button("✖️ Cancelar", "cancel_state"))));
-        return markup;
+        return markup(List.of(new InlineKeyboardRow(button("✖️ Cancelar", "cancel_state"))));
     }
 
     public InlineKeyboardMarkup criarBotoesConflitoTreino(String token) {
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(
-                List.of(button("✏️ Renomear treino atual", "wk_rename:" + token)),
-                List.of(button("➕ Criar novo treino", "wk_new:" + token)),
-                List.of(button("✖️ Cancelar", "pending_cancel:" + token))
+        return markup(List.of(
+                new InlineKeyboardRow(button("✏️ Renomear treino atual", "wk_rename:" + token)),
+                new InlineKeyboardRow(button("➕ Criar novo treino", "wk_new:" + token)),
+                new InlineKeyboardRow(button("✖️ Cancelar", "pending_cancel:" + token))
         ));
-        return markup;
     }
 
     public InlineKeyboardMarkup criarBotoesConfirmacaoMeta(GoalDto dto) {
@@ -67,19 +75,17 @@ public class InlineKeyboardFactory {
         int carb = dto.getCarbs() != null ? dto.getCarbs() : 0;
         int fat = dto.getFat() != null ? dto.getFat() : 0;
         String payload = String.format("confirm_goal:%d:%d:%d:%d", cal, prot, carb, fat);
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(List.of(
+        return markup(List.of(new InlineKeyboardRow(
                 button("✅ Aplicar Metas", payload),
                 button("✖️ Cancelar", "cancel_state")
         )));
-        return markup;
     }
 
     public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, List<WorkoutDto.ExerciseDto> exercises) {
         if (exercises == null || exercises.isEmpty()) {
             return null;
         }
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
         int count = exercises.size();
 
         for (int i = 0; i < count; i++) {
@@ -87,66 +93,60 @@ public class InlineKeyboardFactory {
             String ref = (ex.getId() != null && !ex.getId().isBlank()) ? ex.getId() : String.valueOf(i);
             String suffix = count > 1 ? " " + (i + 1) : "";
 
-            keyboard.add(List.of(
+            rows.add(new InlineKeyboardRow(
                     button("✏️ Editar" + suffix, "edit_ex:" + workoutId + ":" + ref),
                     button("❌ Excluir" + suffix, "delete_ex:" + workoutId + ":" + ref)
             ));
         }
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(keyboard);
-        return markup;
+        return markup(rows);
     }
 
     public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, int startIndex, int count) {
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        List<InlineKeyboardRow> rows = new ArrayList<>();
 
         for (int i = 0; i < count; i++) {
             int idx = startIndex + i;
             String suffix = count > 1 ? " " + (i + 1) : "";
-            keyboard.add(List.of(
+            rows.add(new InlineKeyboardRow(
                     button("✏️ Editar" + suffix, "edit_ex:" + workoutId + ":" + idx),
                     button("❌ Excluir" + suffix, "delete_ex:" + workoutId + ":" + idx)
             ));
         }
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(keyboard);
-        return markup;
+        return markup(rows);
     }
 
     public InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report) {
-        return criarBotoesRelatorio(report, LocalDate.now());
+        return criarBotoesRelatorio(report, LocalDate.now(appZoneId));
     }
 
     public InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report, LocalDate date) {
-        LocalDate safeDate = date != null ? date : LocalDate.now();
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
+        List<InlineKeyboardRow> rows = new ArrayList<>();
 
-        List<InlineKeyboardButton> navRow = new ArrayList<>();
+        InlineKeyboardRow navRow = new InlineKeyboardRow();
         navRow.add(button("⬅️ Dia Anterior", "rep_nav:" + safeDate.minusDays(1)));
-        if (safeDate.isBefore(LocalDate.now())) {
+        if (safeDate.isBefore(LocalDate.now(appZoneId))) {
             navRow.add(button("Dia Seguinte ➡️", "rep_nav:" + safeDate.plusDays(1)));
         }
-        keyboard.add(navRow);
+        rows.add(navRow);
 
         boolean hasMeals = report != null && report.getMeals() != null && !report.getMeals().isEmpty();
         boolean hasWorkouts = report != null && report.getWorkouts() != null && !report.getWorkouts().isEmpty();
         if (hasMeals || hasWorkouts) {
-            keyboard.add(List.of(button("🗑️ Gerenciar / Excluir Itens", "rep_manage:" + safeDate)));
+            rows.add(new InlineKeyboardRow(button("🗑️ Gerenciar / Excluir Itens", "rep_manage:" + safeDate)));
         }
 
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(keyboard);
-        return markup;
+        return markup(rows);
     }
 
     public InlineKeyboardMarkup criarBotoesGerenciarRelatorio(DailyReportDto report, LocalDate date) {
-        LocalDate safeDate = date != null ? date : LocalDate.now();
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
+        List<InlineKeyboardRow> rows = new ArrayList<>();
 
         List<Meal> meals = (report != null && report.getMeals() != null) ? report.getMeals() : List.of();
         int idx = 1;
         for (Meal meal : meals) {
-            keyboard.add(List.of(button("❌ Excluir Refeição " + idx, "del_rep_m:" + meal.getId())));
+            rows.add(new InlineKeyboardRow(button("❌ Excluir Refeição " + idx, "del_rep_m:" + meal.getId())));
             idx++;
         }
 
@@ -158,21 +158,23 @@ public class InlineKeyboardFactory {
             String label = workouts.size() > 1
                     ? "❌ Excluir " + titulo + " (" + workoutIdx + ")"
                     : "❌ Excluir " + titulo;
-            keyboard.add(List.of(button(label, "del_rep_w:" + workout.getId())));
+            rows.add(new InlineKeyboardRow(button(label, "del_rep_w:" + workout.getId())));
             workoutIdx++;
         }
 
-        keyboard.add(List.of(button("⬅️ Voltar ao Relatório", "rep_view:" + safeDate)));
+        rows.add(new InlineKeyboardRow(button("⬅️ Voltar ao Relatório", "rep_view:" + safeDate)));
 
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(keyboard);
-        return markup;
+        return markup(rows);
+    }
+
+    private InlineKeyboardMarkup markup(List<InlineKeyboardRow> rows) {
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
     private InlineKeyboardButton button(String text, String callbackData) {
-        InlineKeyboardButton btn = new InlineKeyboardButton();
-        btn.setText(text);
-        btn.setCallbackData(callbackData);
-        return btn;
+        return InlineKeyboardButton.builder()
+                .text(text)
+                .callbackData(callbackData)
+                .build();
     }
 }

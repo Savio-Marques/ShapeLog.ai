@@ -1,12 +1,20 @@
 package com.bot.telegram.bot;
 
+import com.bot.telegram.model.PendingInputEntity;
+import com.bot.telegram.model.UserStateEntity;
+import com.bot.telegram.repository.PendingInputRepository;
+import com.bot.telegram.repository.UserStateRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 class StateManagerTest {
 
@@ -96,5 +104,50 @@ class StateManagerTest {
 
         stateManager.limparEstadosExpirados();
         assertNull(stateManager.consumePendingInput(123L, token));
+    }
+
+    @Test
+    void comRepositorios_devePersistirEstadoEEntradaTextoNoBanco() {
+        UserStateRepository stateRepo = mock(UserStateRepository.class);
+        PendingInputRepository pendingRepo = mock(PendingInputRepository.class);
+        StateManager persistentManager = new StateManager(stateRepo, pendingRepo);
+
+        persistentManager.putState(500L, "AWAITING_MEAL");
+        verify(stateRepo).save(argThat(e -> e.getChatId().equals(500L) && "AWAITING_MEAL".equals(e.getState())));
+
+        when(stateRepo.findById(500L)).thenReturn(Optional.of(
+                UserStateEntity.builder().chatId(500L).state("AWAITING_MEAL").expiresAt(Instant.now().plusSeconds(60)).build()
+        ));
+        assertEquals("AWAITING_MEAL", persistentManager.getState(500L));
+
+        String token = persistentManager.putPendingInput(500L, "2 ovos", null, 33);
+        verify(pendingRepo).save(argThat(p -> p.getChatId().equals(500L) && token.equals(p.getToken()) && "2 ovos".equals(p.getTextContent())));
+
+        PendingInputEntity entity = PendingInputEntity.builder()
+                .chatId(500L)
+                .token(token)
+                .textContent("2 ovos")
+                .userMessageId(33)
+                .createdAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build();
+        when(pendingRepo.findById(500L)).thenReturn(Optional.of(entity));
+
+        PendingInput consumed = persistentManager.consumePendingInput(500L, token);
+        assertNotNull(consumed);
+        assertEquals("2 ovos", consumed.text());
+        assertEquals(33, consumed.userMessageId());
+        verify(pendingRepo).delete(entity);
+    }
+
+    @Test
+    void comRepositorios_limparEstadosExpirados_deveDeletarNoBanco() {
+        UserStateRepository stateRepo = mock(UserStateRepository.class);
+        PendingInputRepository pendingRepo = mock(PendingInputRepository.class);
+        StateManager persistentManager = new StateManager(stateRepo, pendingRepo);
+
+        persistentManager.limparEstadosExpirados();
+        verify(stateRepo).deleteByExpiresAtBefore(any(Instant.class));
+        verify(pendingRepo).deleteByExpiresAtBefore(any(Instant.class));
     }
 }

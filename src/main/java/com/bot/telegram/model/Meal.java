@@ -1,7 +1,9 @@
 package com.bot.telegram.model;
+
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
+
+import java.time.Instant;
 
 @Entity
 @Table(name = "meals", indexes = {@Index(name = "idx_meal_user_created", columnList = "user_id, createdAt")})
@@ -30,7 +32,7 @@ public class Meal {
     private Double carbs;
     private Double fat;
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     private Integer userMessageId;
     private Integer botMessageId;

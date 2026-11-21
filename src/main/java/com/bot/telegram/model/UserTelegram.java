@@ -5,7 +5,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "users_telegram")
@@ -29,5 +29,5 @@ public class UserTelegram {
     @Builder.Default
     private Boolean approved = false;
 
-    private LocalDateTime registeredAt;
+    private Instant registeredAt;
 }

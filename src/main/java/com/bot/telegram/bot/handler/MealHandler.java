@@ -10,33 +10,46 @@ import com.bot.telegram.service.MealService;
 import com.bot.telegram.service.ReportService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.telegram.telegrambots.meta.api.objects.Message;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 
 @Component
 public class MealHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MealHandler.class);
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
+
     private final MealService mealService;
     private final ReportService reportService;
     private final MessageFormatter messageFormatter;
     private final InlineKeyboardFactory keyboardFactory;
+    private final ZoneId appZoneId;
 
     public MealHandler(MealService mealService, ReportService reportService,
                        MessageFormatter messageFormatter, InlineKeyboardFactory keyboardFactory) {
+        this(mealService, reportService, messageFormatter, keyboardFactory, DEFAULT_ZONE);
+    }
+
+    @Autowired
+    public MealHandler(MealService mealService, ReportService reportService,
+                       MessageFormatter messageFormatter, InlineKeyboardFactory keyboardFactory,
+                       ZoneId appZoneId) {
         this.mealService = mealService;
         this.reportService = reportService;
         this.messageFormatter = messageFormatter;
         this.keyboardFactory = keyboardFactory;
+        this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
     public void registrarRefeicao(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, "Analisando refeição... ⏳");
         try {
             Meal meal = mealService.registerMeal(user, text, audioBytes, userMessageId);
-            LocalDate mealDate = meal.getCreatedAt() != null ? meal.getCreatedAt().toLocalDate() : LocalDate.now();
+            LocalDate mealDate = meal.getCreatedAt() != null ? meal.getCreatedAt().atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
             DailyReportDto dailyReport = reportService.getReportForDate(user, mealDate);
             String formattedText = messageFormatter.formatMealRegistered(meal, dailyReport, mealDate);
             if (tempMsg != null) {
@@ -60,7 +73,7 @@ public class MealHandler {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, "Atualizando refeição... ⏳");
         try {
             Meal meal = mealService.updateMeal(mealId, text, audioBytes);
-            LocalDate mealDate = meal.getCreatedAt() != null ? meal.getCreatedAt().toLocalDate() : LocalDate.now();
+            LocalDate mealDate = meal.getCreatedAt() != null ? meal.getCreatedAt().atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
             DailyReportDto dailyReport = reportService.getReportForDate(user, mealDate);
             String formattedText = messageFormatter.formatMealRegistered(meal, dailyReport, mealDate);
             if (tempMsg != null) {
