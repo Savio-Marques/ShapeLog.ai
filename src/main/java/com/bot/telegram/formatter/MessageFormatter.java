@@ -170,19 +170,7 @@ public class MessageFormatter {
         sb.append("*Treino:* ").append(desc).append("\n\n");
         if (exercises != null) {
             for (WorkoutDto.ExerciseDto ex : exercises) {
-                sb.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
-                List<WorkoutDto.SeriesDto> series = ex.getSeries();
-                if (series != null) {
-                    for (int i = 0; i < series.size(); i++) {
-                        WorkoutDto.SeriesDto s = series.get(i);
-                        sb.append(String.format("• %dª série: %d reps \\- %s kg\n",
-                                (i + 1),
-                                s.getReps() != null ? s.getReps() : 0,
-                                escapeMarkdown(formatWeight(s.getWeight()))
-                        ));
-                    }
-                }
-                sb.append("\n");
+                appendExerciseBlock(sb, ex);
             }
         }
         return sb.toString().trim();
@@ -204,19 +192,7 @@ public class MessageFormatter {
               .append(" _\\(criado automaticamente\\)_\n\n");
         }
         for (WorkoutDto.ExerciseDto ex : exercises) {
-            sb.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
-            List<WorkoutDto.SeriesDto> series = ex.getSeries();
-            if (series != null) {
-                for (int i = 0; i < series.size(); i++) {
-                    WorkoutDto.SeriesDto s = series.get(i);
-                    sb.append(String.format("• %dª série: %d reps \\- %s kg\n",
-                            (i + 1),
-                            s.getReps() != null ? s.getReps() : 0,
-                            escapeMarkdown(formatWeight(s.getWeight()))
-                    ));
-                }
-            }
-            sb.append("\n");
+            appendExerciseBlock(sb, ex);
         }
         return sb.toString().trim();
     }
@@ -266,7 +242,11 @@ public class MessageFormatter {
                 if (titulo == null || titulo.isBlank() || titulo.startsWith("[")) {
                     titulo = "Treino";
                 }
-                workoutsList.append("*Treino:* ").append(escapeMarkdown(titulo)).append("\n\n");
+                workoutsList.append("*Treino:* ").append(escapeMarkdown(titulo));
+                if (workout.getDurationMinutes() != null && workout.getDurationMinutes() > 0) {
+                    workoutsList.append(" \\(").append(workout.getDurationMinutes()).append(" min\\)");
+                }
+                workoutsList.append("\n\n");
                 String json = workout.getExercisesJson();
                 if (json == null || json.isBlank() || json.equals("[]")) {
                     workoutsList.append("_(Nenhum exercício registrado ainda)_\n\n");
@@ -275,18 +255,7 @@ public class MessageFormatter {
                 try {
                     List<WorkoutDto.ExerciseDto> exs = workoutService.deserializeExercises(json);
                     for (WorkoutDto.ExerciseDto ex : exs) {
-                        workoutsList.append("🔹 ").append(escapeMarkdown(ex.getName())).append(":\n");
-                        if (ex.getSeries() != null) {
-                            for (int i = 0; i < ex.getSeries().size(); i++) {
-                                var s = ex.getSeries().get(i);
-                                workoutsList.append(String.format("• %dª série: %d reps \\- %s kg\n",
-                                        (i + 1),
-                                        s.getReps() != null ? s.getReps() : 0,
-                                        escapeMarkdown(formatWeight(s.getWeight()))
-                                ));
-                            }
-                        }
-                        workoutsList.append("\n");
+                        appendExerciseBlock(workoutsList, ex);
                     }
                 } catch (Exception e) {
                     workoutsList.append("_(Erro ao ler exercícios)_\n\n");
@@ -374,6 +343,35 @@ public class MessageFormatter {
             return "meta batida\\! ✅";
         }
         return escapeMarkdown("faltam " + formatDouble(target - consumed) + "g");
+    }
+
+    private void appendExerciseBlock(StringBuilder sb, WorkoutDto.ExerciseDto ex) {
+        if (ex == null) return;
+        String name = (ex.getName() != null && !ex.getName().isBlank()) ? ex.getName() : "Exercício";
+        sb.append("🔹 ").append(escapeMarkdown(name)).append(":\n");
+
+        List<WorkoutDto.SeriesDto> series = ex.getSeries();
+        if (series != null && !series.isEmpty()) {
+            for (int i = 0; i < series.size(); i++) {
+                WorkoutDto.SeriesDto s = series.get(i);
+                sb.append(String.format("• %dª série: %d reps \\- %s kg\n",
+                        (i + 1),
+                        s.getReps() != null ? s.getReps() : 0,
+                        escapeMarkdown(formatWeight(s.getWeight()))
+                ));
+            }
+        }
+
+        List<String> details = ex.getDetails();
+        if (details != null && !details.isEmpty()) {
+            for (String detail : details) {
+                if (detail != null && !detail.isBlank()) {
+                    sb.append("• ").append(escapeMarkdown(detail.trim())).append("\n");
+                }
+            }
+        }
+
+        sb.append("\n");
     }
 
     private String formatDouble(Double value) {

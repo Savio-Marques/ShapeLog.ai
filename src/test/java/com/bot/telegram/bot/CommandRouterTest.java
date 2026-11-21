@@ -117,6 +117,25 @@ class CommandRouterTest {
     }
 
     @Test
+    void rotearComando_treinoComCardioOuCorrida_deveIrDiretoParaExercicio() {
+        commandRouter.rotearComando(user, "/treino Esteira 30 min", 1, USER_ID, sender);
+        commandRouter.rotearComando(user, "/treino Corrida 10km", 2, USER_ID, sender);
+        verify(workoutHandler).registrarExercicioOuCriarTreino(eq(user), eq("Esteira 30 min"), isNull(), eq(1), eq(USER_ID), eq(sender));
+        verify(workoutHandler).registrarExercicioOuCriarTreino(eq(user), eq("Corrida 10km"), isNull(), eq(2), eq(USER_ID), eq(sender));
+        verify(workoutHandler, never()).criarRascunho(any(), any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void rotearComando_treinoHyroxOuCrossfitSemMetricas_deveCriarTitulo() {
+        when(workoutService.getLatestWorkoutForToday(user)).thenReturn(Optional.empty());
+        commandRouter.rotearComando(user, "/treino Hyrox", 1, USER_ID, sender);
+        commandRouter.rotearComando(user, "/treino CrossFit", 2, USER_ID, sender);
+        verify(workoutHandler).criarRascunho(eq(user), eq("Hyrox"), eq(1), eq(USER_ID), eq(sender));
+        verify(workoutHandler).criarRascunho(eq(user), eq("CrossFit"), eq(2), eq(USER_ID), eq(sender));
+        verify(stateManager, times(2)).putState(USER_ID, UserState.AWAITING_EXERCISE.serialize());
+    }
+
+    @Test
     void rotearComando_treinoComSessaoPreenchidaHoje_devePerguntarRenomearOuNovo() {
         WorkoutSession existing = WorkoutSession.builder()
                 .id(50L)

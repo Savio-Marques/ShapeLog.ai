@@ -252,4 +252,48 @@ class MessageFormatterTest {
         assertTrue(suggestion.contains("Déficit moderado para 80kg\\."));
         assertTrue(suggestion.contains("nutricionista"));
     }
+
+    @Test
+    void formatExercisesAdded_cardioCrossfitHyrox_deveRenderizarDetailsSemSeries() {
+        WorkoutDto.ExerciseDto esteira = WorkoutDto.ExerciseDto.builder()
+                .name("Esteira")
+                .series(List.of())
+                .details(List.of("Duração: 30 min", "Velocidade: 10 km/h", "Inclinação: 3%"))
+                .build();
+
+        String card = messageFormatter.formatExercisesAdded(List.of(esteira), "Cardio");
+        assertTrue(card.contains("Treino:"));
+        assertTrue(card.contains("Esteira"));
+        assertTrue(card.contains("Duração: 30 min"));
+        assertTrue(card.contains("Velocidade: 10 km/h"));
+        assertTrue(card.contains("Inclinação: 3%"));
+    }
+
+    @Test
+    void formatDailyReport_treinoCardioComDuracaoEDetails_deveExibirCabecalhoEDetalhes() throws Exception {
+        when(workoutService.deserializeExercises(anyString())).thenAnswer(inv -> {
+            String json = inv.getArgument(0);
+            ObjectMapper mapper = new ObjectMapper();
+            return java.util.Arrays.asList(mapper.readValue(json, WorkoutDto.ExerciseDto[].class));
+        });
+
+        UserTelegram user = UserTelegram.builder().firstName("Sávio").build();
+        String json = "[{\"name\":\"WOD AMRAP 20 min\",\"series\":[],\"details\":[\"Movimentos: 5 pull-ups, 10 push-ups\",\"Resultado: 12 rounds\"]}]";
+        WorkoutSession workout = WorkoutSession.builder()
+                .rawInput("CrossFit")
+                .durationMinutes(20)
+                .exercisesJson(json)
+                .build();
+        DailyReportDto report = DailyReportDto.builder()
+                .meals(List.of())
+                .workouts(List.of(workout))
+                .user(user)
+                .build();
+
+        String formatted = messageFormatter.formatDailyReport(report, LocalDate.now());
+        assertTrue(formatted.contains("CrossFit \\(20 min\\)"));
+        assertTrue(formatted.contains("WOD AMRAP 20 min"));
+        assertTrue(formatted.contains("Movimentos: 5 pull\\-ups, 10 push\\-ups"));
+        assertTrue(formatted.contains("Resultado: 12 rounds"));
+    }
 }

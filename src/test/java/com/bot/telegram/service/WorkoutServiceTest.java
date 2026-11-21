@@ -369,4 +369,19 @@ class WorkoutServiceTest {
                 workoutService.addExercisesOrCreateWorkout(testUser, "texto inválido", null, 403));
         verify(workoutRepository, never()).save(any());
     }
+
+    @Test
+    void deserializeExercises_comDetailsERetrocompatibilidadeLegado_deveFuncionar() {
+        String jsonNovo = "[{\"id\":\"c1\",\"name\":\"Corrida\",\"series\":[],\"details\":[\"Distância: 10 km\",\"Tempo: 52 min\"]}]";
+        List<WorkoutDto.ExerciseDto> novo = workoutService.deserializeExercises(jsonNovo);
+        assertEquals(1, novo.size());
+        assertEquals("Corrida", novo.get(0).getName());
+        assertEquals(List.of("Distância: 10 km", "Tempo: 52 min"), novo.get(0).getDetails());
+
+        String jsonLegado = "[{\"name\":\"Agachamento\",\"series\":[{\"reps\":8,\"weight\":100.0}],\"campoDesconhecido\":123}]";
+        List<WorkoutDto.ExerciseDto> legado = workoutService.deserializeExercises(jsonLegado);
+        assertEquals(1, legado.size());
+        assertEquals("Agachamento", legado.get(0).getName());
+        assertNull(legado.get(0).getDetails());
+    }
 }

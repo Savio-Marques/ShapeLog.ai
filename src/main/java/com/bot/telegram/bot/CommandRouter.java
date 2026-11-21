@@ -29,7 +29,7 @@ public class CommandRouter {
 
     private static final Logger log = LoggerFactory.getLogger(CommandRouter.class);
     private static final Pattern EXERCISE_INPUT_PATTERN = Pattern.compile(
-            "(?i).*(\\d+\\s*[xX×]\\s*\\d+|\\d+\\s*(kg|quilos?|reps?|repeti[cç][õo]es|s[eé]ries?)).*"
+            "(?i).*(\\d+\\s*[xX×]\\s*\\d+|\\d+\\s*(kg|quilos?|reps?|repeti[cç][õo]es|s[eé]ries?|min|minutos?|h|horas?|km|m\\b|metros?|rounds?|cal|kcal)|\\b(amrap|emom|for\\s+time)\\b).*"
     );
 
     private final MealHandler mealHandler;

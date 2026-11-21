@@ -5,11 +5,17 @@ import com.bot.telegram.dto.MealDto;
 import com.bot.telegram.dto.WorkoutDto;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
@@ -21,7 +27,9 @@ import java.util.function.Supplier;
 @Service
 public class GeminiService {
 
+    private static final Logger log = LoggerFactory.getLogger(GeminiService.class);
     private static final long GEMINI_TIMEOUT_SECONDS = 45L;
+    private static final int MAX_OUTPUT_TOKENS = 2048;
 
     private final ChatClient chatClient;
     private final MeterRegistry meterRegistry;
@@ -46,7 +54,7 @@ public class GeminiService {
         if (hasAudio(audioBytes)) {
             return callAudioPrompt("meal", "Analise o áudio em anexo contendo o relato da refeição consumida.\n" + promptText, audioBytes, MealDto.class);
         }
-        return callTextPrompt("meal", "Analise a refeição informada: \"{text}\".\n" + promptText, text, MealDto.class);
+        return callTextPrompt("meal", "Analise a refeição informada: \"" + text + "\".\n" + promptText, MealDto.class);
     }
 
     public MealDto parseMealUpdate(String previousDescription, String text, byte[] audioBytes) {
@@ -68,21 +76,23 @@ public class GeminiService {
         if (hasAudio(audioBytes)) {
             return callAudioPrompt("meal", "Analise o áudio em anexo contendo uma correção ou substituição da refeição.\n" + instruction, audioBytes, MealDto.class);
         }
-        return callTextPrompt("meal", "Solicitação do usuário para editar a refeição: \"{text}\".\n" + instruction, text, MealDto.class);
+        return callTextPrompt("meal", "Solicitação do usuário para editar a refeição: \"" + text + "\".\n" + instruction, MealDto.class);
     }
 
     public WorkoutDto parseWorkout(String text, byte[] audioBytes) {
         validateInput(text, audioBytes);
-        if (hasAudio(audioBytes)) {
-            String audioPrompt = "Analise o áudio em anexo contendo o relato do treino realizado. Extraia a descrição do treino (description como o grupamento muscular, ex: 'Peito', 'Costas', 'Pernas'), a duração estimada em minutos (durationMinutes) e a lista de exercícios (exercises). Cada exercício deve conter o nome do exercício (name, ex: 'Supino Inclinado') e a lista de séries (series) detalhando repetições (reps) e peso em kg (weight) individualmente para cada série.";
-            return callAudioPrompt("workout", audioPrompt, audioBytes, WorkoutDto.class);
-        }
-        String textPrompt = """
-                Analise o treino informado: "{text}".
-                Extraia a descrição do treino (description como o grupamento muscular, ex: 'Peito', 'Costas', 'Pernas'), a duração em minutos (durationMinutes) e a lista de exercícios (exercises).
-                Cada exercício deve conter o nome do exercício (name, ex: 'Supino Inclinado') e a lista de séries (series) detalhando repetições (reps) e peso em kg (weight) individualmente para cada série. Nunca agrupe séries com cargas ou repetições diferentes.
+        String instructions = """
+                Extraia:
+                - "description": modalidade ou grupamento muscular (ex: 'Peito', 'Costas', 'Cardio', 'Corrida', 'CrossFit', 'Hyrox')
+                - "durationMinutes": duração total estimada em minutos como número inteiro (quando informada; caso contrário null)
+                - "exercises": lista de exercícios ou blocos/estações realizados:
+                  * Para musculação/força: preencha "name" (ex: 'Supino Inclinado') e "series" detalhando "reps" e "weight" (kg) individualmente para cada série (nunca agrupe séries com cargas ou repetições diferentes). Use "details" apenas se houver observação extra relevante (ex: 'Drop-set').
+                  * Para cardio, corrida, CrossFit, Hyrox, natação, lutas, isometria ou outras modalidades: deixe "series" como lista vazia [] e preencha "details" com itens curtos no formato "Chave: Valor" (ex: ["Duração: 30 min", "Velocidade: 10 km/h"], ["Distância: 10 km", "Pace: 5:12/km"], ["Movimentos: 5 pull-ups, 10 push-ups", "Resultado: 12 rounds"]). Em circuitos ou Hyrox com múltiplas estações, separe cada estação em um item de "exercises".
                 """;
-        return callTextPrompt("workout", textPrompt, text, WorkoutDto.class);
+        if (hasAudio(audioBytes)) {
+            return callAudioPrompt("workout", "Analise o áudio em anexo contendo o relato do treino realizado.\n" + instructions, audioBytes, WorkoutDto.class);
+        }
+        return callTextPrompt("workout", "Analise o treino informado: \"" + text + "\".\n" + instructions, WorkoutDto.class);
     }
 
     public GoalDto parseGoal(String text, byte[] audioBytes, int currentCal, int currentProt, int currentCarb, int currentFat) {
@@ -102,7 +112,7 @@ public class GeminiService {
         if (hasAudio(audioBytes)) {
             return callAudioPrompt("goal", "Analise o áudio em anexo com o objetivo nutricional do usuário.\n" + instruction, audioBytes, GoalDto.class);
         }
-        return callTextPrompt("goal", "Solicitação do usuário para definir metas: \"{text}\".\n" + instruction, text, GoalDto.class);
+        return callTextPrompt("goal", "Solicitação do usuário para definir metas: \"" + text + "\".\n" + instruction, GoalDto.class);
     }
 
     private void validateInput(String text, byte[] audioBytes) {
@@ -116,22 +126,57 @@ public class GeminiService {
     }
 
     private <T> T callAudioPrompt(String metricType, String promptText, byte[] audioBytes, Class<T> responseType) {
+        BeanOutputConverter<T> converter = new BeanOutputConverter<>(responseType);
+        String fullPrompt = promptText + System.lineSeparator() + converter.getFormat();
         ByteArrayResource resource = new ByteArrayResource(audioBytes);
         Media media = new Media(MimeType.valueOf("audio/ogg"), resource);
         UserMessage userMessage = UserMessage.builder()
-                .text(promptText)
+                .text(fullPrompt)
                 .media(media)
                 .build();
-        return executeWithMetrics(metricType, () -> chatClient.prompt(new Prompt(userMessage))
-                .call()
-                .entity(responseType));
+        return executeStructuredCall(metricType, userMessage, converter);
     }
 
-    private <T> T callTextPrompt(String metricType, String promptTemplate, String userText, Class<T> responseType) {
-        return executeWithMetrics(metricType, () -> chatClient.prompt()
-                .user(u -> u.text(promptTemplate).param("text", userText))
-                .call()
-                .entity(responseType));
+    private <T> T callTextPrompt(String metricType, String promptText, Class<T> responseType) {
+        BeanOutputConverter<T> converter = new BeanOutputConverter<>(responseType);
+        String fullPrompt = promptText + System.lineSeparator() + converter.getFormat();
+        UserMessage userMessage = UserMessage.builder()
+                .text(fullPrompt)
+                .build();
+        return executeStructuredCall(metricType, userMessage, converter);
+    }
+
+    private <T> T executeStructuredCall(String metricType, UserMessage userMessage, BeanOutputConverter<T> converter) {
+        GoogleGenAiChatOptions options = GoogleGenAiChatOptions.builder()
+                .responseMimeType("application/json")
+                .maxOutputTokens(MAX_OUTPUT_TOKENS)
+                .build();
+        Prompt prompt = new Prompt(userMessage, options);
+        return executeWithMetrics(metricType, () -> {
+            ChatResponse response = chatClient.prompt(prompt)
+                    .call()
+                    .chatResponse();
+            if (response == null || response.getResults() == null || response.getResults().isEmpty()) {
+                throw new RuntimeException("Resposta vazia da API do Gemini.");
+            }
+            StringBuilder sb = new StringBuilder();
+            for (Generation gen : response.getResults()) {
+                if (gen != null && gen.getOutput() != null && gen.getOutput().getText() != null) {
+                    sb.append(gen.getOutput().getText());
+                }
+            }
+            String fullText = sb.toString();
+            try {
+                return converter.convert(fullText);
+            } catch (RuntimeException e) {
+                String finishReason = response.getResult() != null && response.getResult().getMetadata() != null
+                        ? String.valueOf(response.getResult().getMetadata().getFinishReason())
+                        : "UNKNOWN";
+                log.error("Falha ao converter JSON do Gemini (type={}, parts={}, finishReason={}, length={}): {}",
+                        metricType, response.getResults().size(), finishReason, fullText.length(), fullText, e);
+                throw e;
+            }
+        });
     }
 
     private <T> T executeWithMetrics(String metricType, Supplier<T> supplier) {

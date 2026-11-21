@@ -23,6 +23,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.io.File;
 import java.nio.file.Files;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class FitnessBot extends TelegramLongPollingBot implements BotActionSender {
@@ -238,6 +239,10 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         try {
             execute(edit);
         } catch (TelegramApiException e) {
+            if (e.getMessage() != null && e.getMessage().contains("message is not modified")) {
+                log.debug("Mensagem id={} no chatId={} não foi modificada (conteúdo idêntico).", messageId, chatId);
+                return;
+            }
             log.warn("Falha ao editar mensagem id={} no chatId={}, enviando nova mensagem como fallback", messageId, chatId);
             enviarMensagemMarkdown(chatId, novoTexto, keyboard);
         }
@@ -247,6 +252,9 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     public String resolverMensagemDeErro(Exception e) {
         Throwable cause = e;
         while (cause != null) {
+            if (cause instanceof TimeoutException) {
+                return "A IA demorou mais que o esperado. Tente novamente em instantes!";
+            }
             String msg = cause.getMessage();
             if (msg != null) {
                 if (msg.contains("RESOURCE_EXHAUSTED") || msg.contains("429")) {
