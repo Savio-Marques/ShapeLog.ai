@@ -10,7 +10,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F2CC0C?logo=grafana&logoColor=black)](https://grafana.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Testes-63%20passing-success?logo=junit5)](./src/test)
+[![Tests](https://img.shields.io/badge/Testes-107%20passing-success?logo=junit5)](./src/test)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](./LICENSE)
 
 </div>
@@ -19,14 +19,14 @@
 
 ## 📌 Sobre o Projeto
 
-O **ShapeLog.ai** é um bot para o Telegram que utiliza a IA generativa do **Google Gemini 2.5 Flash** (via Spring AI) para processar relatos de alimentação e treinos em **texto e áudio**, estruturando automaticamente macronutrientes, séries e cargas em um banco de dados PostgreSQL.
+O **ShapeLog.ai** é um bot para o Telegram que utiliza a IA generativa do **Google Gemini 3.5 Flash Lite** (modelo padrão `gemini-3.5-flash-lite`, configurável via `GEMINI_MODEL`, via Spring AI) para processar relatos de alimentação, treinos (musculação, cardio, corrida, CrossFit, Hyrox e outras modalidades) e metas nutricionais em **texto e áudio**, estruturando automaticamente os dados em um banco PostgreSQL com migrações versionadas via Flyway.
 
 O projeto foi construído com foco em **qualidade de código**, **segurança**, **observabilidade avançada** e **práticas de produção reais**:
-- Pipeline CI/CD automatizado com GitHub Actions.
-- Stack de **Observabilidade (Prometheus + Grafana)** com métricas customizadas de negócio e infraestrutura.
+- Pipeline CI/CD automatizado com GitHub Actions, build multi-arch otimizado, sync de infraestrutura, deploy por SHA imutável, health check e rollback automático.
+- Stack de **Observabilidade (Prometheus + Grafana)** com métricas customizadas de negócio, pool HikariCP e infraestrutura.
 - Provisionamento automatizado de dashboards via **Infrastructure as Code (IaC)**.
-- Arquitetura multi-ambiente (Dev & Prod) com Docker Compose e Spring Profiles.
-- Whitelist dinâmica de usuários e suíte completa de testes automatizados com JUnit 5 e Mockito.
+- Migrações versionadas com **Flyway** (`ddl-auto=validate` em produção) e Optimistic Locking (`@Version`).
+- Execução assíncrona isolada por `chatId`, pool dedicado para chamadas de IA fora de transações e suíte de testes unitários e de integração (`@SpringBootTest`).
 
 ---
 
@@ -34,28 +34,27 @@ O projeto foi construído com foco em **qualidade de código**, **segurança**, 
 
 | Funcionalidade | Descrição |
 |---|---|
-| 🎙️ **Entrada por Áudio** | Grave um áudio relatando sua refeição ou treino — a IA transcreve e estrutura os dados |
-| 📝 **Entrada por Texto** | Descreva em linguagem natural o que comeu ou treinou |
-| 🥗 **Registro de Refeições** | Extrai automaticamente calorias, proteínas, carboidratos e gorduras |
-| 🏋️‍♂️ **Registro de Treinos** | Estrutura exercícios com nome, séries, repetições e cargas |
-| 📊 **Relatório Diário** | Progresso completo do dia comparado às suas metas pessoais |
-| 🎯 **Metas Personalizadas** | Defina suas metas de macros com `/meta` — salvas no banco em tempo real |
-| ✏️ **Edição Inline** | Botões no próprio chat para editar ou excluir refeições e exercícios |
-| 🔐 **Whitelist Dinâmica** | Admin aprova/revoga usuários via Telegram sem reiniciar nada |
-| 📈 **Observabilidade & Métricas** | Monitoramento em tempo real com **Prometheus + Grafana** e métricas customizadas de negócio |
-| 🔔 **Notificação de Acesso** | Admin recebe alerta automático quando alguém tenta usar o bot sem permissão |
+| 🎙️ **Entrada por Áudio** | Grave um áudio relatando sua refeição, treino ou meta — a IA transcreve e estrutura os dados |
+| 📝 **Entrada por Texto** | Descreva em linguagem natural o que comeu ou treinou (com confirmação rápida em 1 toque quando enviado sem comando) |
+| 🥗 **Registro de Refeições** | Extrai calorias, proteínas, carboidratos, gorduras, estimativa de pesos e exibe barra de progresso diária |
+| 🏋️‍♂️ **Registro de Treinos** | Suporta musculação (séries/cargas individuais) e outras modalidades (cardio, corrida, CrossFit, Hyrox) |
+| 📊 **Relatório Diário** | Progresso completo do dia com navegação entre datas (`/relatorio`, ontem ou `DD/MM/AAAA`) e modo gerenciar |
+| 🎯 **Metas Personalizadas** | Consulte `/meta`, informe valores diretos ou descreva seu objetivo para cálculo assistido pela IA |
+| ✏️ **Edição Contextual** | Edite ou exclua refeições e exercícios inline diretamente no card |
+| 🔐 **Whitelist Dinâmica** | Admin aprova/revoga usuários via Telegram com cooldown nas notificações de acesso negado |
+| 📈 **Observabilidade & Métricas** | Monitoramento em tempo real com **Prometheus + Grafana** e métricas customizadas |
 
 ---
 
 ## 📊 Observabilidade & Monitoramento (Prometheus + Grafana)
 
-O **ShapeLog.ai** possui uma infraestrutura completa de observabilidade baseada no ecossistema Open Source **Micrometer + Prometheus + Grafana**.
+O **ShapeLog.ai** possui infraestrutura completa de observabilidade baseada no ecossistema Open Source **Micrometer + Prometheus + Grafana**.
 
 ```mermaid
 graph LR
     A["ShapeLog Bot<br/>(Spring Boot :8080)"] -- "/actuator/prometheus" --> B["Prometheus<br/>(Scrape 15s)"]
     B -- "PromQL" --> C["Grafana<br/>(Dashboards IaC)"]
-    A -- "JPA" --> D["PostgreSQL"]
+    A -- "JPA / Flyway" --> D["PostgreSQL"]
     
     style A fill:#4CAF50,color:#fff
     style B fill:#E6522C,color:#fff
@@ -65,18 +64,17 @@ graph LR
 
 ### 🎯 Métricas Customizadas Instrumentadas (Micrometer)
 
-Além das métricas padrões da JVM, CPU e HTTP, a aplicação exporta métricas de negócio do domínio:
-
 | Métrica Prometheus | Tipo | Descrição / Rótulos |
 |---|---|---|
-| `shapelog_bot_updates_total` | Counter | Total de updates recebidos agrupados por tipo (`message`, `voice`, `callback`) |
+| `shapelog_bot_updates_total` | Counter | Total de updates recebidos agrupados por tipo (`message`, `voice`, `callback`, `other`) |
 | `shapelog_bot_errors_total` | Counter | Total de erros/exceções capturados no bot |
-| `shapelog_bot_update_duration_seconds` | Timer | Tempo de latência de processamento dos updates do Telegram |
-| `shapelog_gemini_calls_total` | Counter | Chamadas enviadas para a IA agrupadas por tipo (`meal`, `workout`) |
+| `shapelog_bot_update_duration_seconds` | Timer | Latência de processamento dos updates do Telegram |
+| `shapelog_gemini_calls_total` | Counter | Chamadas enviadas para a IA agrupadas por tipo (`meal`, `workout`, `goal`) |
 | `shapelog_gemini_call_duration_seconds` | Timer | Latência de resposta da IA Google Gemini |
 | `shapelog_gemini_errors_total` | Counter | Falhas ou timeouts em chamadas à IA |
 | `shapelog_meals_registered_total` | Counter | Refeições extraídas e salvas com sucesso no PostgreSQL |
 | `shapelog_workouts_total` | Counter | Treinos criados com sucesso no PostgreSQL |
+| `hikaricp_connections_*` | Gauge | Conexões ativas, ociosas e limite máximo do pool PostgreSQL |
 | `jvm_memory_used_bytes` | Gauge | Consumo de memória Heap/Non-Heap da JVM |
 | `process_cpu_usage` | Gauge | Percentual de uso de CPU do container |
 
@@ -84,23 +82,21 @@ Além das métricas padrões da JVM, CPU e HTTP, a aplicação exporta métricas
 
 ### 🎨 Dashboard Provisionado (Infrastructure as Code)
 
-O Grafana é automaticamente provisionado através de arquivos de configuração em [`monitoring/grafana/`](file:///c:/Users/Sávio/Documents/projetos/telegram/monitoring/grafana/), sem necessidade de configuração manual na interface web:
+O Grafana é provisionado automaticamente a partir de [`monitoring/grafana/`](./monitoring/grafana/), com atualização contínua:
 
 - **Datasource Provisioning**: Conexão automática com o Prometheus (`http://prometheus:9090`).
-- **Dashboard Provisioning**: Auto-load do dashboard [`ShapeLog Overview`](file:///c:/Users/Sávio/Documents/projetos/telegram/monitoring/grafana/dashboards/shapelog-overview.json) contendo 8 painéis interativos.
+- **Dashboard Provisioning**: Auto-load do dashboard [`ShapeLog Overview`](./monitoring/grafana/dashboards/shapelog-overview.json) contendo **10 painéis interativos** (updates, erros, refeições, treinos, CPU, uptime, duração Gemini, heap JVM, chamadas/erros Gemini por tipo e pool HikariCP).
 
 ---
 
-### 🔐 Acesso Seguro via Túnel SSH (Zero-Trust Production)
+### 🔐 Acesso Seguro (Zero-Trust Production)
 
-Em produção na VPS, a porta do Actuator (`8080`) e a porta do Prometheus (`9090`) são mantidas estritamente privadas na rede interna Docker (`shapelog-net`). O acesso ao Grafana é realizado com segurança máxima através de **Túnel SSH criptografado**:
+Em produção na VPS, a porta do Actuator (`8080`) e o PostgreSQL (`5432`) ficam restritos à rede interna Docker (`shapelog-net`), Prometheus escuta apenas em `127.0.0.1:9090` e o Grafana pode ser vinculado ao IP privado da Tailscale (`GRAFANA_BIND_HOST`) ou acessado via túnel SSH:
 
 ```bash
-# Túnel seguro conectando a porta 3000 local ao Grafana na VPS
-ssh -i shapelog_ci -L 3000:localhost:3000 ubuntu@IP_DA_VPS
+# Túnel SSH alternativo conectando a porta 3000 local ao Grafana na VPS
+ssh -L 3000:localhost:3000 ubuntu@IP_DA_VPS
 ```
-
-Com o túnel ativo, o painel fica acessível em `http://localhost:3000`.
 
 ---
 
@@ -116,15 +112,15 @@ Com o túnel ativo, o painel fica acessível em `http://localhost:3000`.
 
 ```
 com.bot.telegram/
-├── bot/                  ← Entrypoint: FitnessBot (Telegram), CommandRouter
-│   ├── handler/          ← Orquestração de fluxo (MealHandler, WorkoutHandler, ReportHandler)
+├── bot/                  ← FitnessBot (assíncrono por chatId), CommandRouter, StateManager
+│   ├── handler/          ← Orquestração de fluxo (MealHandler, WorkoutHandler, GoalHandler, ReportHandler)
 │   └── keyboard/         ← Fábrica de botões inline (InlineKeyboardFactory)
-├── config/               ← Configurações Spring (MetricsConfig, TelegramConfig)
+├── config/               ← Configurações Spring (TelegramConfig + ThreadPools, MetricsConfig)
 ├── formatter/            ← Camada de apresentação (MessageFormatter — MarkdownV2)
-├── service/              ← Regras de negócio puras (MealService, WorkoutService, UserService, GeminiService, ReportService)
+├── service/              ← Regras de negócio (MealService, WorkoutService, GeminiService, UserService, ReportService)
 ├── model/                ← Entidades JPA (UserTelegram, Meal, WorkoutSession)
-├── dto/                  ← Objetos de transferência (MealDto, WorkoutDto, DailyReportDto)
-└── repository/           ← Spring Data JPA Repositories
+├── dto/                  ← Objetos de transferência (MealDto, WorkoutDto, GoalDto, DailyReportDto)
+└── repository/           ← Spring Data JPA Repositories com consultas por ownership
 ```
 
 ### Fluxo de uma Mensagem
@@ -145,12 +141,12 @@ sequenceDiagram
     F->>M: Incrementa shapelog.bot.updates
     F->>R: rotearComando()
     R->>H: registrarRefeicao()
-    H->>F: "Analisando refeição.. ⏳"
+    H->>F: "Analisando refeição... ⏳"
     H->>S: registerMeal()
-    S->>AI: parseMeal(text)
+    S->>AI: parseMeal(text) [fora da transação]
     AI->>M: Mede latência (shapelog.gemini.call.duration)
     AI-->>S: MealDto {calories, protein, carbs, fat}
-    S->>DB: save(Meal)
+    S->>DB: save(Meal) [transação curta]
     S->>M: Incrementa shapelog.meals.registered
     H->>F: deletarMensagem("Analisando...")
     F->>U: "✅ Refeição Registrada! [Editar] [Excluir]"
@@ -164,33 +160,32 @@ sequenceDiagram
 |---|---|
 | **Linguagem** | Java 17 |
 | **Framework** | Spring Boot 4.1 |
-| **Inteligência Artificial** | Spring AI + Google Gemini 2.5 Flash (Google AI Studio) |
-| **Observabilidade** | Spring Boot Actuator + Micrometer + Prometheus + Grafana |
-| **Banco de Dados** | PostgreSQL 15 |
-| **ORM** | Spring Data JPA / Hibernate |
+| **Inteligência Artificial** | Spring AI + Google Gemini 3.5 Flash Lite (Google AI Studio) |
+| **Migrações & Banco** | PostgreSQL 15 + Flyway + Spring Data JPA / Hibernate (`validate`) |
+| **Observabilidade** | Spring Boot Actuator + Micrometer + Prometheus (`v3.14.0`) + Grafana (`13.2.0`) |
 | **Bot API** | TelegramBots 6.8 |
 | **Conteinerização** | Docker + Docker Compose |
 | **CI/CD** | GitHub Actions |
 | **Nuvem** | Oracle Cloud Infrastructure (OCI) — ARM64 |
-| **Testes** | JUnit 5 + Mockito + H2 |
+| **Testes** | JUnit 5 + Mockito + Spring Boot Test + H2 |
 
 ---
 
 ## ⚙️ CI/CD Pipeline
 
-A cada `git push` na branch `main`, o pipeline executa automaticamente:
+A cada `git push` na branch `main`, o pipeline em [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) executa automaticamente:
 
 ```
 git push main
       │
       ▼
-┌─────────────────────────────┐
-│  1. 🧪 Roda 39 Testes       │ ← Se falhar, deploy é cancelado
-│  2. 🐳 Build Imagem ARM64   │
-│  3. 📦 Push → Docker Hub    │
-│  4. 🔑 SSH → VPS OCI        │
-│  5. 🚀 docker compose up -d │
-└─────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  1. 🧪 Roda 107 Testes (JUnit + Context)│ ← Se falhar, deploy é cancelado
+│  2. 🐳 Build ARM64 (estágio Maven nativo)│
+│  3. 📦 Push → Docker Hub (latest + SHA) │
+│  4. 📁 Sync compose + monitoring → VPS  │
+│  5. 🔑 Deploy por SHA + Healthcheck     │ ← Rollback se /readiness falhar
+└─────────────────────────────────────────┘
 ```
 
 ---
@@ -223,10 +218,16 @@ TELEGRAM_BOT_ADMIN_ID=seu_id_telegram
 POSTGRES_DB=shapelog
 POSTGRES_USER=shapelog_user
 POSTGRES_PASSWORD=sua_senha_aqui
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/shapelog
+DB_URL=jdbc:postgresql://localhost:5432/shapelog
+DB_USERNAME=shapelog_user
+DB_PASSWORD=sua_senha_aqui
 
 # Google AI Studio
 GEMINI_API_KEY=sua_api_key_aqui
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# Grafana
+GRAFANA_ADMIN_PASSWORD=sua_senha_forte_aqui
 ```
 
 ### 3. Suba o ambiente Docker Dev (PostgreSQL, Prometheus e Grafana)
@@ -240,9 +241,9 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 ### 5. Acessar o Monitoramento Local
-- **Actuator Prometheus**: `http://localhost:8080/actuator/prometheus`
+- **Actuator Health/Prometheus**: `http://localhost:8080/actuator/health` e `http://localhost:8080/actuator/prometheus`
 - **Prometheus Targets**: `http://localhost:9090/targets`
-- **Grafana Dashboard**: `http://localhost:3000` (Login: `admin` / `admin`)
+- **Grafana Dashboard**: `http://localhost:3000` (em `docker-compose.dev.yml`: `admin` / `admin`)
 
 ---
 
@@ -252,18 +253,22 @@ docker compose -f docker-compose.dev.yml up -d
 ./mvnw test
 ```
 
-**63 testes automatizados** organizados por camada:
+**107 testes automatizados** organizados por camada:
 
 | Classe de Teste | Tipo | Qtd |
 |---|---|---|
-| `WorkoutServiceTest` | Unitário (Mockito) | 16 |
-| `CommandRouterTest` | Unitário (Mockito) | 16 |
-| `MessageFormatterTest` | Unitário (Mockito) | 9 |
-| `UserServiceTest` | Unitário (Mockito) | 7 |
+| `CommandRouterTest` | Unitário (Mockito) | 31 |
+| `WorkoutServiceTest` | Unitário (Mockito) | 23 |
+| `MessageFormatterTest` | Unitário (Mockito) | 15 |
+| `StateManagerTest` | Unitário (Puro) | 8 |
 | `MealServiceTest` | Unitário (Mockito) | 7 |
-| `StateManagerTest` | Unitário (Puro) | 4 |
+| `UserServiceTest` | Unitário (Mockito) | 7 |
+| `FitnessBotTest` | Unitário / Concorrência | 4 |
+| `GoalHandlerTest` | Unitário (Mockito) | 3 |
 | `ReportServiceTest` | Unitário (Mockito) | 3 |
-| `TelegramApplicationTests` | Sanidade | 1 |
+| `GeminiServiceTest` | Unitário (Mockito) | 3 |
+| `MealHandlerTest` | Unitário (Mockito) | 2 |
+| `TelegramApplicationTests` | Integração (`@SpringBootTest`) | 1 |
 
 ---
 
@@ -275,12 +280,10 @@ docker compose -f docker-compose.dev.yml up -d
 |---|---|
 | `/start` | Exibe o menu de boas-vindas com todos os comandos |
 | `/refeicao <descrição>` | Registra uma refeição (ou só `/refeicao` para aguardar áudio/texto) |
-| `/treino <título>` | Inicia um treino com o título informado |
-| `/exercicio <descrição>` | Adiciona exercícios ao treino do dia |
-| `/meta <kcal> <prot> <carbs> <gord>` | Atualiza suas metas diárias de macros |
-| `/relatorio` | Gera o relatório do dia atual |
-| `/relatorio ontem` | Gera o relatório do dia anterior |
-| `/relatorio DD/MM/AAAA` | Gera o relatório de uma data específica |
+| `/treino <título>` | Inicia um treino ou registra diretamente se já contiver exercício/métrica |
+| `/exercicio <descrição>` | Adiciona exercícios ao treino do dia (cria automaticamente se não houver) |
+| `/meta` | Consulta metas atuais ou informa novos valores/objetivo para cálculo por IA |
+| `/relatorio` | Gera o relatório do dia atual (`/relatorio ontem` ou `/relatorio DD/MM/AAAA`) |
 
 ### Comandos de Administrador
 
@@ -294,13 +297,12 @@ docker compose -f docker-compose.dev.yml up -d
 
 ## 🔐 Segurança
 
-- **Whitelist dinâmica** no banco de dados — nenhum usuário não autorizado consegue usar o bot
-- **Autorização de recursos** — cada usuário só pode editar/excluir seus próprios dados
-- **Zero-Trust Network** — portas de métricas e banco de dados fechadas para o tráfego externo da internet
-- **Túnel SSH para Acesso Administrativo** — o Grafana é acessado com túnel SSH privado na VPS
-- **Variáveis de ambiente** — nenhuma credencial hardcoded no código
-- **Container não-root** — a aplicação Docker roda com usuário `spring` sem privilégios
-- **Log de tentativas** — tentativas de acesso não autorizado são logadas com `WARN`
+- **Whitelist dinâmica** no banco de dados com cooldown (24h) para notificações ao administrador
+- **Autorização de recursos no repositório** (`findByIdAndUserId`) — cada usuário só edita/exclui seus próprios registros
+- **Zero-Trust Network** — Actuator (`8080`) e banco (`5432`) isolados na rede Docker interna; Prometheus em `127.0.0.1` e Grafana restrito por bind/túnel SSH
+- **Credenciais protegidas** — nenhuma credencial hardcoded; `GRAFANA_ADMIN_PASSWORD` obrigatória em produção
+- **Container não-root & limites de recursos** — aplicação executa com usuário `spring`, healthcheck e limites explícitos de RAM/CPU
+- **Proteção contra payloads abusivos** — limite de 2 minutos / 2 MB em mensagens de voz antes do download
 
 ---
 

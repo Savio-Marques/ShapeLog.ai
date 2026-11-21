@@ -121,6 +121,45 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "title": "Chamadas & Erros Gemini por Tipo",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "shapelog_gemini_calls_total",
+          "legendFormat": "Chamadas ({{type}})",
+          "refId": "A"
+        },
+        {
+          "expr": "shapelog_gemini_errors_total",
+          "legendFormat": "Erros ({{type}})",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Conexões HikariCP (PostgreSQL)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "hikaricp_connections_active",
+          "legendFormat": "Ativas",
+          "refId": "A"
+        },
+        {
+          "expr": "hikaricp_connections_idle",
+          "legendFormat": "Ociosas",
+          "refId": "B"
+        },
+        {
+          "expr": "hikaricp_connections_max",
+          "legendFormat": "Máximo",
+          "refId": "C"
+        }
+      ]
     }
   ],
   "refresh": "5s",

@@ -52,6 +52,20 @@ jobs:
     needs: test-and-build
 
     steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Sincronizar compose e monitoring na VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.OCI_SSH_HOST }}
+          username: ${{ secrets.OCI_SSH_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          source: "docker-compose.yml,monitoring"
+          target: "/home/ubuntu/shapelog-bot"
+          overwrite: true
+          rm: false
+
       - name: SSH Pull e Restart na VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -59,12 +73,38 @@ jobs:
           username: ${{ secrets.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
+            set -e
             cd /home/ubuntu/shapelog-bot
             COMPOSE_CMD="docker compose"
             if ! docker compose version > /dev/null 2>&1; then
               COMPOSE_CMD="docker-compose"
             fi
-            $COMPOSE_CMD pull shapelog-bot
-            $COMPOSE_CMD up -d --no-build
+
+            PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' shapelog-bot 2>/dev/null || echo "")
+            PREV_TAG="latest"
+            if echo "$PREV_IMAGE" | grep -q ":"; then
+              PREV_TAG="${PREV_IMAGE##*:}"
+            fi
+
+            IMAGE_TAG=${{ github.sha }} $COMPOSE_CMD pull shapelog-bot
+            IMAGE_TAG=${{ github.sha }} $COMPOSE_CMD up -d --no-build
+
+            HEALTHY=false
+            for i in $(seq 1 30); do
+              if docker exec shapelog-bot curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '"status":"UP"'; then
+                HEALTHY=true
+                break
+              fi
+              sleep 3
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "Healthcheck falhou apos deploy! Ultimos logs:"
+              docker logs --tail 60 shapelog-bot || true
+              echo "Executando rollback para tag anterior ($PREV_TAG)..."
+              IMAGE_TAG="$PREV_TAG" $COMPOSE_CMD up -d --no-build shapelog-bot || true
+              exit 1
+            fi
+
             docker image prune -f
-            echo "Deploy concluido! Bot esta online."
+            echo "Deploy concluido com saude! Imagem ativa: saviomarques/shapelog-bot:${{ github.sha }}"

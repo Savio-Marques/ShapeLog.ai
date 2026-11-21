@@ -1,10 +1,10 @@
-version: '3.8'
-
 services:
   shapelog-db:
     image: postgres:15-alpine
     container_name: shapelog-db
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.75
     env_file:
       - .env
     volumes:
@@ -16,11 +16,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   shapelog-bot:
-    image: saviomarques/shapelog-bot:latest
+    image: saviomarques/shapelog-bot:${IMAGE_TAG:-latest}
     container_name: shapelog-bot
     restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
     depends_on:
       shapelog-db:
         condition: service_healthy
@@ -32,6 +39,12 @@ services:
       - shapelog-net
     expose:
       - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -39,9 +52,16 @@ services:
         max-file: "3"
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.14.0
     container_name: shapelog-prometheus
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.size=1GB"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -49,11 +69,18 @@ services:
       - shapelog-net
     ports:
       - "127.0.0.1:9090:9090"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.0
     container_name: shapelog-grafana
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD obrigatoria no .env}
     volumes:
@@ -63,9 +90,14 @@ services:
     networks:
       - shapelog-net
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${GRAFANA_BIND_HOST:-127.0.0.1}:3000:3000"
     depends_on:
       - prometheus
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   shapelog_pgdata:
@@ -74,4 +106,3 @@ volumes:
 
 networks:
   shapelog-net:
-
