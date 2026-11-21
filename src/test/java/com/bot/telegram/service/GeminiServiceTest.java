@@ -15,6 +15,9 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -81,5 +84,34 @@ class GeminiServiceTest {
         assertEquals(1, dto.getExercises().size());
         assertEquals("Esteira", dto.getExercises().get(0).getName());
         assertEquals(List.of("Duração: 30 min", "Velocidade: 10 km/h"), dto.getExercises().get(0).getDetails());
+    }
+
+    @Test
+    void executeWithMetrics_deveExecutarNoExecutorDedicadoENaoNoForkJoinCommonPool() {
+        ExecutorService customExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "gemini-custom-test"));
+        try {
+            GeminiService serviceWithCustomPool = new GeminiService(chatModel, new SimpleMeterRegistry(), customExecutor);
+            AtomicReference<String> threadName = new AtomicReference<>();
+
+            String json = """
+                    {
+                      "description": "banana (~100g)",
+                      "calories": 90,
+                      "protein": 1.1,
+                      "carbs": 23.0,
+                      "fat": 0.3
+                    }
+                    """;
+            when(chatModel.call(any(Prompt.class))).thenAnswer(inv -> {
+                threadName.set(Thread.currentThread().getName());
+                return new ChatResponse(List.of(new Generation(new AssistantMessage(json))));
+            });
+
+            MealDto result = serviceWithCustomPool.parseMeal("1 banana", null);
+            assertNotNull(result);
+            assertEquals("gemini-custom-test", threadName.get());
+        } finally {
+            customExecutor.shutdownNow();
+        }
     }
 }

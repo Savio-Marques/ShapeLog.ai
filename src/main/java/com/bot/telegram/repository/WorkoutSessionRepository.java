@@ -9,6 +9,7 @@ import java.util.Optional;
 
 @Repository
 public interface WorkoutSessionRepository extends JpaRepository<WorkoutSession, Long> {
+    Optional<WorkoutSession> findByIdAndUserId(Long id, Long userId);
     List<WorkoutSession> findByUserAndCreatedAtBetweenOrderByIdAsc(UserTelegram user, LocalDateTime start, LocalDateTime end);
     Optional<WorkoutSession> findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(UserTelegram user, LocalDateTime start, LocalDateTime end);
 }

@@ -3,9 +3,14 @@ package com.bot.telegram.bot;
 import com.bot.telegram.formatter.MessageFormatter;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.service.UserService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
@@ -19,16 +24,21 @@ import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
 import java.io.File;
 import java.nio.file.Files;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class FitnessBot extends TelegramLongPollingBot implements BotActionSender {
 
     private static final Logger log = LoggerFactory.getLogger(FitnessBot.class);
+    static final long MAX_VOICE_FILE_SIZE_BYTES = 2L * 1024 * 1024;
+    static final int MAX_VOICE_DURATION_SECONDS = 120;
+    static final long ADMIN_NOTIFY_COOLDOWN_MS = 24L * 60 * 60 * 1000L;
 
     @Value("${telegram.bot.username}")
     private String botUsername;
@@ -43,12 +53,22 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     private final CommandRouter commandRouter;
     private final MessageFormatter messageFormatter;
     private final MeterRegistry meterRegistry;
+    private final Executor botUpdateExecutor;
+    private final ConcurrentHashMap<Long, CompletableFuture<Void>> chatQueues = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Long> adminNotifiedAt = new ConcurrentHashMap<>();
 
     public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter, MeterRegistry meterRegistry) {
+        this(userService, commandRouter, messageFormatter, meterRegistry, Runnable::run);
+    }
+
+    @Autowired
+    public FitnessBot(UserService userService, CommandRouter commandRouter, MessageFormatter messageFormatter, MeterRegistry meterRegistry,
+                      @Qualifier("botUpdateExecutor") Executor botUpdateExecutor) {
         this.userService = userService;
         this.commandRouter = commandRouter;
         this.messageFormatter = messageFormatter;
         this.meterRegistry = meterRegistry;
+        this.botUpdateExecutor = botUpdateExecutor;
     }
 
     @Override
@@ -70,7 +90,8 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
     private void notificarAcessoNegadoEAdmin(UserTelegram user, Long chatId) {
         enviarMensagem(chatId, "⛔ Acesso restrito. Solicite permissão ao administrador para utilizar o bot.");
 
-        if (adminId != null && adminId > 0 && !adminId.equals(chatId)) {
+        if (adminId != null && adminId > 0 && !adminId.equals(chatId)
+                && shouldNotifyAdmin(chatId, System.currentTimeMillis())) {
             String username = user.getUsername() != null ? messageFormatter.escapeMarkdown(user.getUsername()) : "sem username";
             String firstName = user.getFirstName() != null ? messageFormatter.escapeMarkdown(user.getFirstName()) : "sem nome";
 
@@ -86,12 +107,57 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         }
     }
 
+    boolean shouldNotifyAdmin(Long chatId, long now) {
+        if (adminNotifiedAt.size() > 1000) {
+            adminNotifiedAt.entrySet().removeIf(entry -> (now - entry.getValue()) >= ADMIN_NOTIFY_COOLDOWN_MS);
+        }
+        AtomicBoolean shouldNotify = new AtomicBoolean(false);
+        adminNotifiedAt.compute(chatId, (id, lastNotified) -> {
+            if (lastNotified == null || (now - lastNotified) >= ADMIN_NOTIFY_COOLDOWN_MS) {
+                shouldNotify.set(true);
+                return now;
+            }
+            return lastNotified;
+        });
+        return shouldNotify.get();
+    }
+
     @Override
     public void onUpdateReceived(Update update) {
+        Long chatId = extractChatId(update);
+        if (chatId == null) {
+            botUpdateExecutor.execute(() -> processUpdate(update));
+            return;
+        }
+        CompletableFuture<Void> scheduled = chatQueues.compute(chatId, (id, previous) ->
+                (previous == null || previous.isDone())
+                        ? CompletableFuture.runAsync(() -> processUpdate(update), botUpdateExecutor)
+                        : previous.handleAsync((ignored, err) -> {
+                            processUpdate(update);
+                            return null;
+                        }, botUpdateExecutor)
+        );
+        scheduled.whenComplete((res, err) -> chatQueues.remove(chatId, scheduled));
+    }
+
+    private Long extractChatId(Update update) {
+        if (update == null) {
+            return null;
+        }
+        if (update.hasCallbackQuery() && update.getCallbackQuery().getMessage() != null) {
+            return update.getCallbackQuery().getMessage().getChatId();
+        }
+        if (update.hasMessage()) {
+            return update.getMessage().getChatId();
+        }
+        return null;
+    }
+
+    void processUpdate(Update update) {
         Timer.Sample sample = Timer.start(meterRegistry);
         Long chatId = null;
         try {
-            if (update.hasCallbackQuery()) {
+            if (update.hasCallbackQuery() && update.getCallbackQuery().getMessage() != null) {
                 meterRegistry.counter("shapelog.bot.updates", "type", "callback").increment();
                 chatId = update.getCallbackQuery().getMessage().getChatId();
                 UserTelegram user = userService.getOrCreateUser(
@@ -134,6 +200,11 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
                 } else if (update.getMessage().hasVoice()) {
                     meterRegistry.counter("shapelog.bot.updates", "type", "voice").increment();
                     Voice voice = update.getMessage().getVoice();
+                    if ((voice.getDuration() != null && voice.getDuration() > MAX_VOICE_DURATION_SECONDS)
+                            || (voice.getFileSize() != null && voice.getFileSize() > MAX_VOICE_FILE_SIZE_BYTES)) {
+                        enviarMensagem(chatId, "⚠️ Áudio muito longo ou grande (máximo de 2 minutos / 2 MB). Envie um áudio mais curto ou descreva em texto.");
+                        return;
+                    }
                     byte[] audioBytes = obterBytesDoAudio(voice.getFileId());
                     if (audioBytes == null) {
                         enviarMensagem(chatId, "Não foi possível baixar o áudio. Tente reenviar ou descreva em texto.");
@@ -156,7 +227,7 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         }
     }
 
-    private byte[] obterBytesDoAudio(String fileId) {
+    byte[] obterBytesDoAudio(String fileId) {
         File fileLocal = null;
         try {
             GetFile getFile = new GetFile();
@@ -254,6 +325,9 @@ public class FitnessBot extends TelegramLongPollingBot implements BotActionSende
         while (cause != null) {
             if (cause instanceof TimeoutException) {
                 return "A IA demorou mais que o esperado. Tente novamente em instantes!";
+            }
+            if (cause instanceof OptimisticLockingFailureException) {
+                return "Este treino foi alterado ao mesmo tempo por outra ação. Tente novamente!";
             }
             String msg = cause.getMessage();
             if (msg != null) {

@@ -16,11 +16,14 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -33,10 +36,17 @@ public class GeminiService {
 
     private final ChatClient chatClient;
     private final MeterRegistry meterRegistry;
+    private final Executor geminiExecutor;
 
     public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry) {
+        this(chatModel, meterRegistry, Runnable::run);
+    }
+
+    @Autowired
+    public GeminiService(ChatModel chatModel, MeterRegistry meterRegistry, @Qualifier("geminiExecutor") Executor geminiExecutor) {
         this.chatClient = ChatClient.create(chatModel);
         this.meterRegistry = meterRegistry;
+        this.geminiExecutor = geminiExecutor;
     }
 
     public MealDto parseMeal(String text, byte[] audioBytes) {
@@ -182,12 +192,13 @@ public class GeminiService {
     private <T> T executeWithMetrics(String metricType, Supplier<T> supplier) {
         meterRegistry.counter("shapelog.gemini.calls", "type", metricType).increment();
         Timer.Sample sample = Timer.start(meterRegistry);
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(supplier, geminiExecutor);
         try {
-            T result = CompletableFuture.supplyAsync(supplier)
-                    .get(GEMINI_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            T result = future.get(GEMINI_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             sample.stop(meterRegistry.timer("shapelog.gemini.call.duration", "type", metricType));
             return result;
         } catch (Exception e) {
+            future.cancel(true);
             meterRegistry.counter("shapelog.gemini.errors", "type", metricType).increment();
             throw new RuntimeException("Erro ao chamar API do Gemini (timeout ou falha): " + e.getMessage(), e);
         }

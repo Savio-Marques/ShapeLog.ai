@@ -9,5 +9,6 @@ import java.util.Optional;
 
 @Repository
 public interface MealRepository extends JpaRepository<Meal, Long> {
+    Optional<Meal> findByIdAndUserId(Long id, Long userId);
     List<Meal> findByUserAndCreatedAtBetweenOrderByIdAsc(UserTelegram user, LocalDateTime start, LocalDateTime end);
 }

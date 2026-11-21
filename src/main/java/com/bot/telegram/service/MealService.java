@@ -4,10 +4,14 @@ import com.bot.telegram.model.Meal;
 import com.bot.telegram.model.UserTelegram;
 import com.bot.telegram.repository.MealRepository;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.List;
-import org.springframework.transaction.annotation.Transactional;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 @Service
 public class MealService {
@@ -15,11 +19,25 @@ public class MealService {
     private final MealRepository mealRepository;
     private final GeminiService geminiService;
     private final MeterRegistry meterRegistry;
+    private final TransactionTemplate transactionTemplate;
 
     public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry) {
+        this(mealRepository, geminiService, meterRegistry, null);
+    }
+
+    @Autowired
+    public MealService(MealRepository mealRepository, GeminiService geminiService, MeterRegistry meterRegistry, TransactionTemplate transactionTemplate) {
         this.mealRepository = mealRepository;
         this.geminiService = geminiService;
         this.meterRegistry = meterRegistry;
+        this.transactionTemplate = transactionTemplate;
+    }
+
+    private <T> T inTransaction(Supplier<T> action) {
+        if (transactionTemplate == null) {
+            return action.get();
+        }
+        return transactionTemplate.execute(status -> action.get());
     }
 
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes) {
@@ -40,23 +58,29 @@ public class MealService {
                 .userMessageId(userMessageId)
                 .createdAt(LocalDateTime.now())
                 .build();
-        Meal saved = mealRepository.save(meal);
-        meterRegistry.counter("shapelog.meals.registered").increment();
-        return saved;
+        return inTransaction(() -> {
+            Meal saved = mealRepository.save(meal);
+            meterRegistry.counter("shapelog.meals.registered").increment();
+            return saved;
+        });
     }
 
     public Meal updateMeal(Long mealId, String text, byte[] audioBytes) {
-        Meal meal = mealRepository.findById(mealId)
+        Meal existing = mealRepository.findById(mealId)
                 .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));
-        MealDto dto = geminiService.parseMealUpdate(meal.getDescription(), text, audioBytes);
+        MealDto dto = geminiService.parseMealUpdate(existing.getDescription(), text, audioBytes);
         validarMealDto(dto);
-        meal.setRawInput(text != null ? text : "[Mensagem de Voz]");
-        meal.setDescription(dto.getDescription() != null ? dto.getDescription() : "sem descrição");
-        meal.setCalories(dto.getCalories() != null ? dto.getCalories() : 0);
-        meal.setProtein(dto.getProtein() != null ? dto.getProtein() : 0.0);
-        meal.setCarbs(dto.getCarbs() != null ? dto.getCarbs() : 0.0);
-        meal.setFat(dto.getFat() != null ? dto.getFat() : 0.0);
-        return mealRepository.save(meal);
+        return inTransaction(() -> {
+            Meal meal = mealRepository.findById(mealId)
+                    .orElseThrow(() -> new IllegalArgumentException("Refeição não encontrada com ID: " + mealId));
+            meal.setRawInput(text != null ? text : "[Mensagem de Voz]");
+            meal.setDescription(dto.getDescription() != null ? dto.getDescription() : "sem descrição");
+            meal.setCalories(dto.getCalories() != null ? dto.getCalories() : 0);
+            meal.setProtein(dto.getProtein() != null ? dto.getProtein() : 0.0);
+            meal.setCarbs(dto.getCarbs() != null ? dto.getCarbs() : 0.0);
+            meal.setFat(dto.getFat() != null ? dto.getFat() : 0.0);
+            return mealRepository.save(meal);
+        });
     }
 
     private void validarMealDto(MealDto dto) {
@@ -82,12 +106,17 @@ public class MealService {
         });
     }
 
+    @Transactional
     public void deleteMeal(Long mealId) {
         mealRepository.deleteById(mealId);
     }
 
-    public java.util.Optional<Meal> findById(Long mealId) {
+    public Optional<Meal> findById(Long mealId) {
         return mealRepository.findById(mealId);
+    }
+
+    public Optional<Meal> findByIdAndUserId(Long mealId, Long userId) {
+        return mealRepository.findByIdAndUserId(mealId, userId);
     }
 
     public boolean existeMeal(Long mealId) {

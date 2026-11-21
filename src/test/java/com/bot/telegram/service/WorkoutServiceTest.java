@@ -8,6 +8,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -207,7 +211,7 @@ class WorkoutServiceTest {
     }
 
     @Test
-    void deserializeExercises_jsonInvalidoOuVazio_deveRetornarListaVazia() {
+    void deserializeExercises_nuloOuVazio_deveRetornarListaVazia() {
         List<WorkoutDto.ExerciseDto> vazia = workoutService.deserializeExercises("");
         assertNotNull(vazia);
         assertTrue(vazia.isEmpty());
@@ -215,10 +219,42 @@ class WorkoutServiceTest {
         List<WorkoutDto.ExerciseDto> nulo = workoutService.deserializeExercises(null);
         assertNotNull(nulo);
         assertTrue(nulo.isEmpty());
+    }
 
-        List<WorkoutDto.ExerciseDto> invalido = workoutService.deserializeExercises("{jsonQuebrado}");
-        assertNotNull(invalido);
-        assertTrue(invalido.isEmpty());
+    @Test
+    void deserializeExercises_jsonInvalido_deveLancarExcecaoSemSilenciar() {
+        assertThrows(IllegalStateException.class, () ->
+                workoutService.deserializeExercises("{jsonQuebrado}"));
+    }
+
+    @Test
+    void addExercisesOrCreateWorkout_deveChamarGeminiForaDaTransacao() {
+        PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
+        when(txManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        TransactionTemplate txTemplate = new TransactionTemplate(txManager);
+        WorkoutService serviceComTx = new WorkoutService(geminiService, workoutRepository, objectMapper, new SimpleMeterRegistry(), txTemplate);
+
+        WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(10).weight(80.0).build();
+        WorkoutDto.ExerciseDto ex = WorkoutDto.ExerciseDto.builder().name("Supino Reto").series(List.of(series)).build();
+        WorkoutDto dto = WorkoutDto.builder().description("Peito").exercises(List.of(ex)).build();
+
+        when(geminiService.parseWorkout("supino 10 reps 80kg", null)).thenReturn(dto);
+        when(workoutRepository.findFirstByUserAndCreatedAtBetweenOrderByCreatedAtDesc(eq(testUser), any(), any()))
+                .thenReturn(Optional.empty());
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> {
+            WorkoutSession ws = inv.getArgument(0);
+            ws.setId(55L);
+            return ws;
+        });
+
+        WorkoutService.WorkoutUpdateResult result = serviceComTx.addExercisesOrCreateWorkout(testUser, "supino 10 reps 80kg", null, 12);
+        assertNotNull(result);
+
+        InOrder inOrder = inOrder(geminiService, txManager, workoutRepository);
+        inOrder.verify(geminiService).parseWorkout("supino 10 reps 80kg", null);
+        inOrder.verify(txManager).getTransaction(any());
+        inOrder.verify(workoutRepository).save(any(WorkoutSession.class));
+        inOrder.verify(txManager).commit(any());
     }
 
     @Test

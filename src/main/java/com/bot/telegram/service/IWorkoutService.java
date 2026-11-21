@@ -19,6 +19,7 @@ public interface IWorkoutService {
     void saveBotMessageId(Long workoutId, Integer botMessageId);
     void deleteWorkout(Long workoutId);
     Optional<WorkoutSession> findById(Long workoutId);
+    Optional<WorkoutSession> findByIdAndUserId(Long workoutId, Long userId);
     boolean existeWorkout(Long workoutId);
     Optional<WorkoutSession> getLatestWorkoutForToday(UserTelegram user);
     List<WorkoutSession> getWorkoutsForDate(UserTelegram user, java.time.LocalDate date);

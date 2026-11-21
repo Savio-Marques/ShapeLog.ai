@@ -277,7 +277,7 @@ class CommandRouterTest {
     @Test
     void rotearCallback_editExEEdicaoEmSeguida_devePreservarBotMessageIdParaEdicaoInPlace() {
         WorkoutSession ws = WorkoutSession.builder().id(20L).user(user).build();
-        when(workoutService.findById(20L)).thenReturn(Optional.of(ws));
+        when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.of(ws));
 
         commandRouter.rotearCallback(user, "edit_ex:20:ex123", 850, USER_ID, sender);
         verify(stateManager).putState(USER_ID, "AWAITING_EDIT_EXERCISE:20:ex123:850");
@@ -319,7 +319,7 @@ class CommandRouterTest {
                 .user(user)
                 .createdAt(LocalDateTime.now())
                 .build();
-        when(mealService.findById(10L)).thenReturn(Optional.of(meal));
+        when(mealService.findByIdAndUserId(10L, USER_ID)).thenReturn(Optional.of(meal));
 
         commandRouter.rotearCallback(user, "del_rep_m:10", 99, USER_ID, sender);
         verify(mealService).deleteMeal(10L);
@@ -333,7 +333,7 @@ class CommandRouterTest {
                 .user(user)
                 .createdAt(LocalDateTime.now())
                 .build();
-        when(workoutService.findById(20L)).thenReturn(Optional.of(ws));
+        when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.of(ws));
 
         commandRouter.rotearCallback(user, "del_rep_w:20", 99, USER_ID, sender);
         verify(workoutService).deleteWorkout(20L);
@@ -376,9 +376,21 @@ class CommandRouterTest {
     @Test
     void rotearCallback_deleteExComUuid_deveChamarWorkoutHandlerComExerciseId() {
         WorkoutSession ws = WorkoutSession.builder().id(20L).user(user).build();
-        when(workoutService.findById(20L)).thenReturn(Optional.of(ws));
+        when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.of(ws));
 
         commandRouter.rotearCallback(user, "delete_ex:20:a1b2c3d4", 99, USER_ID, sender);
         verify(workoutHandler).processarExclusaoExercicio(20L, "a1b2c3d4", 99, USER_ID, sender);
+    }
+
+    @Test
+    void rotearCallback_recursoDeOutroUsuario_deveBloquearSemExecutarExclusao() {
+        when(mealService.findByIdAndUserId(10L, USER_ID)).thenReturn(Optional.empty());
+        when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.empty());
+
+        commandRouter.rotearCallback(user, "delete_meal:10", 99, USER_ID, sender);
+        commandRouter.rotearCallback(user, "delete_workout:20", 100, USER_ID, sender);
+
+        verifyNoInteractions(mealHandler);
+        verifyNoInteractions(workoutHandler);
     }
 }

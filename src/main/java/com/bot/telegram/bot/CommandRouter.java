@@ -302,24 +302,24 @@ public class CommandRouter {
                 rotearCallbackMetaOuRelatorio(user, data, botMessageId, chatId, sender);
             } else if (data.startsWith("delete_meal:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
-                Meal meal = mealService.findById(mealId).orElse(null);
-                if (meal == null || !meal.getUser().getId().equals(chatId)) {
+                Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
+                if (meal == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
                     return;
                 }
                 mealHandler.processarExclusaoRefeicao(mealId, botMessageId, chatId, sender);
             } else if (data.startsWith("delete_workout:")) {
                 Long workoutId = Long.parseLong(data.split(":")[1]);
-                WorkoutSession ws = workoutService.findById(workoutId).orElse(null);
-                if (ws == null || !ws.getUser().getId().equals(chatId)) {
+                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
+                if (ws == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }
                 workoutHandler.processarExclusaoTreino(workoutId, botMessageId, chatId, sender);
             } else if (data.startsWith("edit_meal:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
-                Meal meal = mealService.findById(mealId).orElse(null);
-                if (meal == null || !meal.getUser().getId().equals(chatId)) {
+                Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
+                if (meal == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
                     return;
                 }
@@ -333,8 +333,8 @@ public class CommandRouter {
                 String[] parts = data.split(":");
                 if (parts.length < 3) { log.error("Callback edit_ex malformado: '{}'", data); return; }
                 Long workoutId = Long.parseLong(parts[1]);
-                WorkoutSession ws = workoutService.findById(workoutId).orElse(null);
-                if (ws == null || !ws.getUser().getId().equals(chatId)) {
+                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
+                if (ws == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }
@@ -349,8 +349,8 @@ public class CommandRouter {
                 String[] parts = data.split(":");
                 if (parts.length < 3) { log.error("Callback delete_ex malformado: '{}'", data); return; }
                 Long workoutId = Long.parseLong(parts[1]);
-                WorkoutSession ws = workoutService.findById(workoutId).orElse(null);
-                if (ws == null || !ws.getUser().getId().equals(chatId)) {
+                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
+                if (ws == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }
@@ -358,8 +358,8 @@ public class CommandRouter {
                 workoutHandler.processarExclusaoExercicio(workoutId, exerciseId, botMessageId, chatId, sender);
             } else if (data.startsWith("del_rep_m:")) {
                 Long mealId = Long.parseLong(data.split(":")[1]);
-                Meal meal = mealService.findById(mealId).orElse(null);
-                if (meal == null || !meal.getUser().getId().equals(chatId)) {
+                Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
+                if (meal == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
                     return;
                 }
@@ -368,8 +368,8 @@ public class CommandRouter {
                 reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
             } else if (data.startsWith("del_rep_w:")) {
                 Long workoutId = Long.parseLong(data.split(":")[1]);
-                WorkoutSession ws = workoutService.findById(workoutId).orElse(null);
-                if (ws == null || !ws.getUser().getId().equals(chatId)) {
+                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
+                if (ws == null) {
                     log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
                     return;
                 }

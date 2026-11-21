@@ -35,4 +35,7 @@ public class WorkoutSession {
 
     private Integer userMessageId;
     private Integer botMessageId;
+
+    @Version
+    private Long version;
 }
