@@ -16,12 +16,15 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class MealHandlerTest {
+
+    private static final ZoneId APP_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private MealService mealService;
     private ReportService reportService;
@@ -35,10 +38,10 @@ class MealHandlerTest {
     void setUp() {
         mealService = mock(MealService.class);
         reportService = mock(ReportService.class);
-        messageFormatter = new MessageFormatter(mock(IWorkoutService.class));
-        keyboardFactory = new InlineKeyboardFactory();
+        messageFormatter = new MessageFormatter(mock(IWorkoutService.class), APP_ZONE);
+        keyboardFactory = new InlineKeyboardFactory(APP_ZONE);
         sender = mock(BotActionSender.class);
-        mealHandler = new MealHandler(mealService, reportService, messageFormatter, keyboardFactory);
+        mealHandler = new MealHandler(mealService, reportService, messageFormatter, keyboardFactory, APP_ZONE);
 
         user = UserTelegram.builder()
                 .id(100L)
@@ -57,7 +60,7 @@ class MealHandlerTest {
         Message sentBotMsg = new Message();
         sentBotMsg.setMessageId(20);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(APP_ZONE);
         Meal saved = Meal.builder()
                 .id(1L)
                 .description("2 ovos mexidos (~100g)")
@@ -98,7 +101,7 @@ class MealHandlerTest {
     void atualizarRefeicaoEditada_deveEditarCardInPlaceComProgressoAtualizado() {
         Message tempMsg = new Message();
         tempMsg.setMessageId(11);
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(APP_ZONE);
 
         Meal updated = Meal.builder()
                 .id(1L)

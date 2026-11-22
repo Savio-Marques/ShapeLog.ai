@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,13 +22,15 @@ import static org.mockito.Mockito.when;
 
 class MessageFormatterTest {
 
+    private static final ZoneId APP_ZONE = ZoneId.of("America/Sao_Paulo");
+
     private IWorkoutService workoutService;
     private MessageFormatter messageFormatter;
 
     @BeforeEach
     void setUp() {
         workoutService = mock(IWorkoutService.class);
-        messageFormatter = new MessageFormatter(workoutService);
+        messageFormatter = new MessageFormatter(workoutService, APP_ZONE);
     }
 
     @Test
@@ -94,7 +97,7 @@ class MessageFormatterTest {
                 .user(user)
                 .build();
 
-        String result = messageFormatter.formatDailyReport(report, LocalDate.now());
+        String result = messageFormatter.formatDailyReport(report, LocalDate.now(APP_ZONE));
         assertTrue(result.contains("RELATÓRIO DE HOJE"));
     }
 
@@ -107,7 +110,7 @@ class MessageFormatterTest {
                 .user(user)
                 .build();
 
-        String result = messageFormatter.formatDailyReport(report, LocalDate.now().minusDays(1));
+        String result = messageFormatter.formatDailyReport(report, LocalDate.now(APP_ZONE).minusDays(1));
         assertTrue(result.contains("RELATÓRIO DE ONTEM"));
     }
 
@@ -200,7 +203,7 @@ class MessageFormatterTest {
                 .totalFat(45.0)
                 .build();
 
-        String result = messageFormatter.formatMealRegistered(meal, report, LocalDate.now());
+        String result = messageFormatter.formatMealRegistered(meal, report, LocalDate.now(APP_ZONE));
         assertTrue(result.contains("Progresso \\(HOJE\\)"));
         assertTrue(result.contains("1400 / 2000 kcal"));
         assertTrue(result.contains("faltam 600 kcal"));
@@ -290,7 +293,7 @@ class MessageFormatterTest {
                 .user(user)
                 .build();
 
-        String formatted = messageFormatter.formatDailyReport(report, LocalDate.now());
+        String formatted = messageFormatter.formatDailyReport(report, LocalDate.now(APP_ZONE));
         assertTrue(formatted.contains("CrossFit \\(20 min\\)"));
         assertTrue(formatted.contains("WOD AMRAP 20 min"));
         assertTrue(formatted.contains("Movimentos: 5 pull\\-ups, 10 push\\-ups"));
