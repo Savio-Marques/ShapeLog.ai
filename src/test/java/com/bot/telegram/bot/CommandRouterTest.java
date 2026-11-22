@@ -16,6 +16,7 @@ import com.bot.telegram.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 
 import java.time.Instant;
@@ -85,10 +86,16 @@ class CommandRouterTest {
     }
 
     @Test
-    void rotearComando_refeicaoSemTexto_deveColocarEstadoAwaitingMeal() {
+    void rotearComando_refeicaoSemTexto_deveColocarEstadoAwaitingMealComBotaoCancelar() {
+        Message promptMsg = new Message();
+        promptMsg.setMessageId(310);
+        when(sender.enviarMensagemMarkdown(eq(USER_ID), contains("Aguardando refeição"), any(InlineKeyboardMarkup.class)))
+                .thenReturn(promptMsg);
+
         commandRouter.rotearComando(user, "/refeicao", 1, USER_ID, sender);
-        verify(stateManager).putState(eq(USER_ID), contains("AWAITING_MEAL"));
-        verify(sender).enviarMensagemMarkdown(eq(USER_ID), contains("Aguardando refeição"));
+
+        verify(stateManager).putState(USER_ID, "AWAITING_MEAL:310");
+        verify(sender).enviarMensagemMarkdown(eq(USER_ID), contains("Aguardando refeição"), any(InlineKeyboardMarkup.class));
     }
 
     @Test
@@ -98,10 +105,10 @@ class CommandRouterTest {
     }
 
     @Test
-    void rotearComando_treinoSemTexto_deveColocarEstadoAwaitingTitle() {
+    void rotearComando_treinoSemTexto_deveColocarEstadoAwaitingTitleComBotaoCancelar() {
         commandRouter.rotearComando(user, "/treino", 1, USER_ID, sender);
         verify(stateManager).putState(eq(USER_ID), contains("AWAITING_WORKOUT_TITLE"));
-        verify(sender).enviarMensagemMarkdown(eq(USER_ID), contains("título do treino"));
+        verify(sender).enviarMensagemMarkdown(eq(USER_ID), contains("título do treino"), any(InlineKeyboardMarkup.class));
     }
 
     @Test
@@ -110,6 +117,22 @@ class CommandRouterTest {
         commandRouter.rotearComando(user, "/treino Peito", 1, USER_ID, sender);
         verify(workoutHandler).criarRascunho(eq(user), eq("Peito"), eq(1), eq(USER_ID), eq(sender));
         verify(stateManager).putState(USER_ID, UserState.AWAITING_EXERCISE.serialize());
+    }
+
+    @Test
+    void rotearComando_treinoTitulosComNumerosOuDuracao_naoDevemDispararExercicio() {
+        when(workoutService.getLatestWorkoutForToday(user)).thenReturn(Optional.empty());
+
+        commandRouter.rotearComando(user, "/treino 5x5", 1, USER_ID, sender);
+        commandRouter.rotearComando(user, "/treino StrongLifts 5x5", 2, USER_ID, sender);
+        commandRouter.rotearComando(user, "/treino 1h", 3, USER_ID, sender);
+        commandRouter.rotearComando(user, "/treino Semana 2m", 4, USER_ID, sender);
+
+        verify(workoutHandler).criarRascunho(eq(user), eq("5x5"), eq(1), eq(USER_ID), eq(sender));
+        verify(workoutHandler).criarRascunho(eq(user), eq("StrongLifts 5x5"), eq(2), eq(USER_ID), eq(sender));
+        verify(workoutHandler).criarRascunho(eq(user), eq("1h"), eq(3), eq(USER_ID), eq(sender));
+        verify(workoutHandler).criarRascunho(eq(user), eq("Semana 2m"), eq(4), eq(USER_ID), eq(sender));
+        verify(workoutHandler, never()).registrarExercicioOuCriarTreino(any(), any(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -165,15 +188,24 @@ class CommandRouterTest {
 
     @Test
     void rotearComando_metaVazio_deveMostrarMetasAtuaisEColocarEstado() {
+        Message goalsPrompt = new Message();
+        goalsPrompt.setMessageId(450);
+        when(goalHandler.mostrarMetasAtuais(user, USER_ID, sender)).thenReturn(goalsPrompt);
+
         commandRouter.rotearComando(user, "/meta", 1, USER_ID, sender);
-        verify(stateManager).putState(USER_ID, UserState.AWAITING_GOAL.serialize());
+
         verify(goalHandler).mostrarMetasAtuais(user, USER_ID, sender);
+        verify(stateManager).putState(USER_ID, "AWAITING_GOAL:450");
     }
 
     @Test
-    void rotearComando_metaComValoresCorretos_deveChamarGoalHandler() {
+    void rotearComando_metaComValoresCorretosEDecimais_deveArredondarESalvarSemChamarIA() {
         commandRouter.rotearComando(user, "/meta 2000 150 200 60", 1, USER_ID, sender);
         verify(goalHandler).salvarMetasDiretas(user, 2000, 150, 200, 60, USER_ID, sender);
+
+        commandRouter.rotearComando(user, "/meta 2000 150.6 200,4 60", 2, USER_ID, sender);
+        verify(goalHandler).salvarMetasDiretas(user, 2000, 151, 200, 60, USER_ID, sender);
+        verify(goalHandler, never()).sugerirMetasPorIA(any(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -215,6 +247,17 @@ class CommandRouterTest {
         verify(stateManager).putPendingInput(USER_ID, "2 ovos e 1 pão", null, 10);
         verify(sender).enviarMensagemMarkdown(eq(USER_ID), contains("Mensagem recebida"), any(InlineKeyboardMarkup.class));
         verifyNoInteractions(mealHandler, workoutHandler);
+    }
+
+    @Test
+    void rotearEstadoTexto_quandoHandlerFalhar_devePreservarEstadoEPrompt() {
+        when(stateManager.getState(USER_ID)).thenReturn("AWAITING_EDIT_MEAL:10:777");
+        when(mealHandler.atualizarRefeicaoEditada(user, 10L, "texto ambiguo", null, USER_ID, sender)).thenReturn(false);
+
+        commandRouter.rotearEstadoTexto(user, "texto ambiguo", 25, USER_ID, sender);
+
+        verify(stateManager, never()).removeState(USER_ID);
+        verify(sender, never()).deletarMensagem(eq(USER_ID), eq(777));
     }
 
     @Test
@@ -267,35 +310,67 @@ class CommandRouterTest {
     void rotearCallback_wkNewEWkRename_devemExecutarEEntrarEmAwaitingExercise() {
         PendingInput p1 = new PendingInput("wk1", "Cardio", null, 11, System.currentTimeMillis());
         when(stateManager.consumePendingInput(USER_ID, "wk1")).thenReturn(p1);
+        WorkoutSession draft1 = WorkoutSession.builder().id(1L).botMessageId(710).build();
+        when(workoutHandler.criarNovoTreino(user, "Cardio", 11, USER_ID, sender)).thenReturn(draft1);
+
         commandRouter.rotearCallback(user, "wk_new:wk1", 700, USER_ID, sender);
         verify(workoutHandler).criarNovoTreino(user, "Cardio", 11, USER_ID, sender);
-        verify(stateManager).putState(USER_ID, UserState.AWAITING_EXERCISE.serialize());
+        verify(stateManager).putState(USER_ID, "AWAITING_EXERCISE:710");
 
         PendingInput p2 = new PendingInput("wk2", "Peito e Ombro", null, 12, System.currentTimeMillis());
         when(stateManager.consumePendingInput(USER_ID, "wk2")).thenReturn(p2);
+        WorkoutSession draft2 = WorkoutSession.builder().id(2L).botMessageId(711).build();
+        when(workoutHandler.criarRascunho(user, "Peito e Ombro", 12, USER_ID, sender)).thenReturn(draft2);
+
         commandRouter.rotearCallback(user, "wk_rename:wk2", 701, USER_ID, sender);
         verify(workoutHandler).criarRascunho(user, "Peito e Ombro", 12, USER_ID, sender);
-        verify(stateManager, times(2)).putState(USER_ID, UserState.AWAITING_EXERCISE.serialize());
+        verify(stateManager).putState(USER_ID, "AWAITING_EXERCISE:711");
     }
 
     @Test
-    void rotearCallback_editExEEdicaoEmSeguida_devePreservarBotMessageIdParaEdicaoInPlace() {
-        WorkoutSession ws = WorkoutSession.builder().id(20L).user(user).build();
+    void rotearCallback_editExEEdicaoEmSeguida_deveIncluirResumoEDeletarPromptOrfaoAoConcluir() {
+        WorkoutSession ws = WorkoutSession.builder()
+                .id(20L)
+                .user(user)
+                .exercisesJson("[{\"id\":\"ex123\",\"name\":\"Tríceps corda\",\"series\":[{\"reps\":8,\"weight\":20.0}]}]")
+                .build();
         when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.of(ws));
+        when(workoutService.deserializeExercises(ws.getExercisesJson())).thenReturn(
+                List.of(WorkoutDto.ExerciseDto.builder()
+                        .id("ex123")
+                        .name("Tríceps corda")
+                        .series(List.of(WorkoutDto.SeriesDto.builder().reps(8).weight(20.0).build()))
+                        .build())
+        );
+        when(workoutService.findExerciseIndex(anyList(), eq("ex123"))).thenReturn(0);
+
+        Message promptMsg = new Message();
+        promptMsg.setMessageId(999);
+        when(sender.enviarMensagemMarkdown(eq(USER_ID), contains("Tríceps corda"), any(InlineKeyboardMarkup.class)))
+                .thenReturn(promptMsg);
 
         commandRouter.rotearCallback(user, "edit_ex:20:ex123", 850, USER_ID, sender);
-        verify(stateManager).putState(USER_ID, "AWAITING_EDIT_EXERCISE:20:ex123:850");
-        verify(sender).enviarMensagemMarkdown(eq(USER_ID), contains("Editando exercício"), any(InlineKeyboardMarkup.class));
+        verify(stateManager).putState(USER_ID, "AWAITING_EDIT_EXERCISE:20:ex123:850:999");
 
-        when(stateManager.getState(USER_ID)).thenReturn("AWAITING_EDIT_EXERCISE:20:ex123:850");
+        when(stateManager.getState(USER_ID)).thenReturn("AWAITING_EDIT_EXERCISE:20:ex123:850:999");
+        when(workoutHandler.atualizarExercicioEditado(20L, "ex123", 850, "Supino 4x8 90kg", null, USER_ID, sender))
+                .thenReturn(true);
+
         commandRouter.rotearEstadoTexto(user, "Supino 4x8 90kg", 15, USER_ID, sender);
+
         verify(workoutHandler).atualizarExercicioEditado(20L, "ex123", 850, "Supino 4x8 90kg", null, USER_ID, sender);
+        verify(stateManager).removeState(USER_ID);
+        verify(sender).deletarMensagem(USER_ID, 999);
     }
 
     @Test
     void rotearCallback_openGoalsERelatorioToday_devemAbrirMetasERelatorioDeHoje() {
+        Message goalsPrompt = new Message();
+        goalsPrompt.setMessageId(451);
+        when(goalHandler.mostrarMetasAtuais(user, USER_ID, sender)).thenReturn(goalsPrompt);
+
         commandRouter.rotearCallback(user, "open_goals", 899, USER_ID, sender);
-        verify(stateManager).putState(USER_ID, UserState.AWAITING_GOAL.serialize());
+        verify(stateManager).putState(USER_ID, "AWAITING_GOAL:451");
         verify(sender).responderToast("Suas metas");
         verify(goalHandler).mostrarMetasAtuais(user, USER_ID, sender);
 
@@ -305,10 +380,15 @@ class CommandRouterTest {
     }
 
     @Test
-    void rotearCallback_confirmGoalERelatorioNavegacaoECancelState() {
+    void rotearCallback_confirmGoalECancelGoalENavegacaoECancelState() {
+        when(stateManager.getState(USER_ID)).thenReturn("AWAITING_GOAL");
         commandRouter.rotearCallback(user, "confirm_goal:2100:160:210:65", 900, USER_ID, sender);
         verify(stateManager).removeState(USER_ID);
         verify(goalHandler).confirmarMetasSugeridas(user, 2100, 160, 210, 65, 900, USER_ID, sender);
+
+        commandRouter.rotearCallback(user, "cancel_goal", 906, USER_ID, sender);
+        verify(sender).responderToast("Sugestão cancelada");
+        verify(sender).editarMensagemBot(eq(USER_ID), eq(906), contains("Operação cancelada"), isNull());
 
         LocalDate date = LocalDate.of(2026, 11, 18);
         commandRouter.rotearCallback(user, "open_report:2026-11-18", 901, USER_ID, sender);
@@ -323,9 +403,19 @@ class CommandRouterTest {
         commandRouter.rotearCallback(user, "rep_view:2026-11-18", 904, USER_ID, sender);
         verify(reportHandler).voltarModoVisualizacao(user, date, 904, USER_ID, sender);
 
+        when(stateManager.getState(USER_ID)).thenReturn("AWAITING_MEAL:905");
         commandRouter.rotearCallback(user, "cancel_state", 905, USER_ID, sender);
         verify(stateManager, times(2)).removeState(USER_ID);
         verify(sender).editarMensagemBot(eq(USER_ID), eq(905), contains("Operação cancelada"), isNull());
+    }
+
+    @Test
+    void rotearCallback_cancelStateOrfao_deveRemoverTecladoSemCancelarNada() {
+        when(stateManager.getState(USER_ID)).thenReturn(null);
+        commandRouter.rotearCallback(user, "cancel_state", 950, USER_ID, sender);
+        verify(sender).editarTecladoBot(USER_ID, 950, null);
+        verify(sender).responderToast("Operação já encerrada");
+        verify(stateManager, never()).removeState(USER_ID);
     }
 
     @Test
@@ -406,6 +496,23 @@ class CommandRouterTest {
     }
 
     @Test
+    void rotearCallback_itemJaRemovidoPeloRelatorio_deveAvisarEAtualizarCard() {
+        when(mealService.findByIdAndUserId(10L, USER_ID)).thenReturn(Optional.empty());
+        when(mealService.existeMeal(10L)).thenReturn(false);
+
+        commandRouter.rotearCallback(user, "edit_meal:10", 500, USER_ID, sender);
+        verify(sender).responderToast("Esta refeição já foi removida");
+        verify(sender).editarMensagemBot(eq(USER_ID), eq(500), contains("já foi removida"), isNull());
+
+        when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.empty());
+        when(workoutService.existeWorkout(20L)).thenReturn(false);
+
+        commandRouter.rotearCallback(user, "delete_ex:20:ex1", 501, USER_ID, sender);
+        verify(sender).responderToast("Este treino já foi removido");
+        verify(sender).editarMensagemBot(eq(USER_ID), eq(501), contains("já foi removido"), isNull());
+    }
+
+    @Test
     void rotearComando_aprovar_apenasAdmin_deveAprovarUsuario() {
         UserTelegram targetUser = UserTelegram.builder().id(555L).firstName("Fulano").build();
         when(userService.approveUser(555L)).thenReturn(Optional.of(targetUser));
@@ -450,7 +557,9 @@ class CommandRouterTest {
     @Test
     void rotearCallback_recursoDeOutroUsuario_deveBloquearSemExecutarExclusao() {
         when(mealService.findByIdAndUserId(10L, USER_ID)).thenReturn(Optional.empty());
+        when(mealService.existeMeal(10L)).thenReturn(true);
         when(workoutService.findByIdAndUserId(20L, USER_ID)).thenReturn(Optional.empty());
+        when(workoutService.existeWorkout(20L)).thenReturn(true);
 
         commandRouter.rotearCallback(user, "delete_meal:10", 99, USER_ID, sender);
         commandRouter.rotearCallback(user, "cfm_del_meal:10", 99, USER_ID, sender);
@@ -463,5 +572,6 @@ class CommandRouterTest {
         verifyNoInteractions(mealHandler);
         verifyNoInteractions(workoutHandler);
         verify(sender, never()).editarTecladoBot(anyLong(), anyInt(), any());
+        verify(sender, never()).editarMensagemBot(anyLong(), anyInt(), any(), any());
     }
 }

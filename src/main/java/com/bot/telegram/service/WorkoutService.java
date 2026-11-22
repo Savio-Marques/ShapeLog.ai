@@ -14,8 +14,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -141,11 +143,19 @@ public class WorkoutService implements IWorkoutService {
             session.setDurationMinutes(existingDuration + dto.getDurationMinutes());
         }
         List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
-        existingExercises.forEach(this::ensureExerciseId);
+        sanitizeExerciseIds(existingExercises);
         int startIndex = existingExercises.size();
         List<WorkoutDto.ExerciseDto> added = dto.getExercises();
-        added.forEach(this::ensureExerciseId);
-        existingExercises.addAll(added);
+        if (added != null) {
+            // Sobrescreve qualquer "id" eventualmente preenchido pelo Gemini (ex: "1") para evitar colisão
+            for (WorkoutDto.ExerciseDto ex : added) {
+                if (ex != null) {
+                    ex.setId(generateExerciseId());
+                }
+            }
+            existingExercises.addAll(added);
+        }
+        sanitizeExerciseIds(existingExercises);
         session.setExercisesJson(serializeExercises(existingExercises));
         if (userMessageId != null) {
             session.setUserMessageId(userMessageId);
@@ -157,10 +167,13 @@ public class WorkoutService implements IWorkoutService {
     public WorkoutSession editExerciseById(Long workoutId, String exerciseId, String text, byte[] audioBytes) {
         WorkoutSession preCheck = workoutRepository.findById(workoutId)
                 .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        if (findExerciseIndex(deserializeExercises(preCheck.getExercisesJson()), exerciseId) < 0) {
+        List<WorkoutDto.ExerciseDto> preExercises = deserializeExercises(preCheck.getExercisesJson());
+        int preIdx = findExerciseIndex(preExercises, exerciseId);
+        if (preIdx < 0) {
             throw new IllegalArgumentException("Este exercício não foi encontrado ou já foi removido.");
         }
-        WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
+        WorkoutDto.ExerciseDto originalEx = preExercises.get(preIdx);
+        WorkoutDto dto = geminiService.parseExerciseUpdate(originalEx, text, audioBytes);
         if (dto == null || dto.getExercises() == null || dto.getExercises().isEmpty()) {
             throw new IllegalArgumentException("Não foi possível identificar o exercício atualizado. Tente descrever novamente com séries e peso!");
         }
@@ -176,6 +189,7 @@ public class WorkoutService implements IWorkoutService {
             WorkoutDto.ExerciseDto newEx = dto.getExercises().get(0);
             newEx.setId(oldEx.getId() != null && !oldEx.getId().isBlank() ? oldEx.getId() : generateExerciseId());
             existingExercises.set(idx, newEx);
+            sanitizeExerciseIds(existingExercises);
             session.setExercisesJson(serializeExercises(existingExercises));
             return workoutRepository.save(session);
         });
@@ -192,6 +206,12 @@ public class WorkoutService implements IWorkoutService {
             throw new IllegalArgumentException("Este exercício já foi removido.");
         }
         existingExercises.remove(idx);
+        if (existingExercises.isEmpty()) {
+            session.setExercisesJson("[]");
+            workoutRepository.delete(session);
+            return session;
+        }
+        sanitizeExerciseIds(existingExercises);
         session.setExercisesJson(serializeExercises(existingExercises));
         return workoutRepository.save(session);
     }
@@ -216,10 +236,30 @@ public class WorkoutService implements IWorkoutService {
         return -1;
     }
 
-    private void ensureExerciseId(WorkoutDto.ExerciseDto ex) {
-        if (ex != null && (ex.getId() == null || ex.getId().isBlank())) {
-            ex.setId(generateExerciseId());
+    private void sanitizeExerciseIds(List<WorkoutDto.ExerciseDto> exercises) {
+        if (exercises == null) {
+            return;
         }
+        Set<String> seen = new HashSet<>();
+        for (WorkoutDto.ExerciseDto ex : exercises) {
+            if (ex == null) {
+                continue;
+            }
+            String id = ex.getId();
+            if (id == null || id.isBlank() || !seen.add(id)) {
+                String fresh = generateUniqueId(seen);
+                ex.setId(fresh);
+                seen.add(fresh);
+            }
+        }
+    }
+
+    private String generateUniqueId(Set<String> seen) {
+        String candidate = generateExerciseId();
+        while (seen.contains(candidate)) {
+            candidate = generateExerciseId();
+        }
+        return candidate;
     }
 
     private String generateExerciseId() {

@@ -47,7 +47,6 @@ class StateManagerTest {
     void limparEstadosExpirados_deveRemoverApenasExpirados() {
         stateManager.putState(123L, "AWAITING_MEAL");
         stateManager.limparEstadosExpirados();
-        // O estado recente não deve ser limpo
         assertEquals("AWAITING_MEAL", stateManager.getState(123L));
     }
 
@@ -57,7 +56,7 @@ class StateManagerTest {
         String token = stateManager.putPendingInput(123L, null, audio, 55);
 
         assertNotNull(token);
-        assertEquals(8, token.length());
+        assertEquals(12, token.length());
 
         PendingInput first = stateManager.consumePendingInput(123L, token);
         assertNotNull(first);
@@ -82,14 +81,25 @@ class StateManagerTest {
     }
 
     @Test
-    void putPendingInput_novaEntradaDeveSubstituirAnterior() {
-        String oldToken = stateManager.putPendingInput(123L, "pão", null, 1);
-        String newToken = stateManager.putPendingInput(123L, "arroz", null, 2);
+    void putPendingInput_multiplasEntradasMesmoChat_devemCoexistirEIsolarPorChat() {
+        String firstToken = stateManager.putPendingInput(123L, "pão com ovo", null, 1);
+        String secondToken = stateManager.putPendingInput(123L, "arroz e frango", null, 2);
+        String audioToken = stateManager.putPendingInput(123L, null, new byte[]{7, 8}, 3);
 
-        assertNull(stateManager.consumePendingInput(123L, oldToken));
-        PendingInput latest = stateManager.consumePendingInput(123L, newToken);
-        assertNotNull(latest);
-        assertEquals("arroz", latest.text());
+        // Outro usuário não consegue consumir token alheio
+        assertNull(stateManager.consumePendingInput(999L, firstToken));
+
+        // Todas as entradas do próprio chat continuam válidas na ordem que o usuário clicar
+        PendingInput second = stateManager.consumePendingInput(123L, secondToken);
+        PendingInput first = stateManager.consumePendingInput(123L, firstToken);
+        PendingInput audio = stateManager.consumePendingInput(123L, audioToken);
+
+        assertNotNull(second);
+        assertEquals("arroz e frango", second.text());
+        assertNotNull(first);
+        assertEquals("pão com ovo", first.text());
+        assertNotNull(audio);
+        assertTrue(audio.isVoice());
     }
 
     @Test
@@ -98,9 +108,10 @@ class StateManagerTest {
         String token = stateManager.putPendingInput(123L, "antigo", null, 1);
         Field field = StateManager.class.getDeclaredField("pendingInputs");
         field.setAccessible(true);
-        Map<Long, PendingInput> map = (Map<Long, PendingInput>) field.get(stateManager);
+        Map<String, StateManager.ScopedPendingInput> map =
+                (Map<String, StateManager.ScopedPendingInput>) field.get(stateManager);
         long expiredTs = System.currentTimeMillis() - (16 * 60 * 1000L);
-        map.put(123L, new PendingInput(token, "antigo", null, 1, expiredTs));
+        map.put(token, new StateManager.ScopedPendingInput(123L, new PendingInput(token, "antigo", null, 1, expiredTs)));
 
         stateManager.limparEstadosExpirados();
         assertNull(stateManager.consumePendingInput(123L, token));
@@ -131,7 +142,7 @@ class StateManagerTest {
                 .createdAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(60))
                 .build();
-        when(pendingRepo.findById(500L)).thenReturn(Optional.of(entity));
+        when(pendingRepo.findByTokenAndChatId(token, 500L)).thenReturn(Optional.of(entity));
 
         PendingInput consumed = persistentManager.consumePendingInput(500L, token);
         assertNotNull(consumed);

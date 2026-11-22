@@ -174,7 +174,8 @@ class MessageFormatterTest {
 
         String formatted = messageFormatter.formatDailyReport(report);
         assertNotNull(formatted);
-        assertTrue(formatted.contains("`██████████` 106%"));
+        assertTrue(formatted.contains("`▰▰▰▰▰▰▰▰▰▰` 106%"));
+        assertTrue(formatted.contains("↳ excedeu 152 kcal"));
         assertTrue(formatted.contains("Peito"));
         assertTrue(formatted.contains("Supino Inclinado"));
         assertTrue(formatted.contains("12×80 · 8×100 kg"));
@@ -401,6 +402,56 @@ class MessageFormatterTest {
         assertEquals("> Linha 1\\!", lines[0]);
         assertEquals("> \\> citação \\(interna\\)", lines[1]);
         assertEquals("> Linha 3\\.", lines[2]);
+    }
+
+    @Test
+    void formatEditPromptsEMiniResumos_devemIncluirContextoETituloSemCriadoAutomaticamente() {
+        String mealPrompt = messageFormatter.formatEditMealPrompt("frango grelhado (150g), arroz");
+        assertTrue(mealPrompt.contains("Editando refeição"));
+        assertTrue(mealPrompt.contains("frango grelhado \\(150g\\)"));
+
+        String exPrompt = messageFormatter.formatEditExercisePrompt("Tríceps corda — 4×8");
+        assertTrue(exPrompt.contains("Editando exercício"));
+        assertTrue(exPrompt.contains("Tríceps corda — 4×8"));
+
+        Meal updatedMeal = Meal.builder().description("3 ovos mexidos").calories(300).build();
+        String mealConf = messageFormatter.formatMealUpdatedConfirmation(updatedMeal);
+        assertTrue(mealConf.contains("Refeição atualizada"));
+        assertTrue(mealConf.contains("3 ovos mexidos"));
+        assertTrue(mealConf.contains("300 kcal"));
+
+        WorkoutDto.ExerciseDto ex = WorkoutDto.ExerciseDto.builder()
+                .name("Tríceps corda")
+                .series(List.of(
+                        WorkoutDto.SeriesDto.builder().reps(8).weight(20.0).build(),
+                        WorkoutDto.SeriesDto.builder().reps(8).weight(20.0).build()
+                ))
+                .build();
+        String exConf = messageFormatter.formatExerciseUpdatedConfirmation(ex);
+        assertTrue(exConf.contains("Exercício atualizado"));
+        assertTrue(exConf.contains("Tríceps corda"));
+        assertTrue(exConf.contains("2×8 · 20 kg"));
+
+        String editedCardWithHeader = messageFormatter.formatExercisesAdded(List.of(ex), "Pull", false, true);
+        assertTrue(editedCardWithHeader.contains("editado"));
+        assertTrue(editedCardWithHeader.contains("🏋️ *Treino:* Pull"));
+        assertFalse(editedCardWithHeader.contains("criado automaticamente"));
+    }
+
+    @Test
+    void formatExercisesAdded_comMuitasSeries_deveRespeitarLimite4096() {
+        List<WorkoutDto.SeriesDto> manySets = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            manySets.add(WorkoutDto.SeriesDto.builder().reps(12).weight(50.0 + i).build());
+        }
+        WorkoutDto.ExerciseDto hugeEx = WorkoutDto.ExerciseDto.builder()
+                .name("Agachamento Livre Gigante")
+                .series(manySets)
+                .build();
+
+        String card = messageFormatter.formatExercisesAdded(List.of(hugeEx), "Pernas", true, false);
+        assertTrue(card.length() <= 4096, "Card excedeu 4096 chars: " + card.length());
+        assertTrue(card.contains("omitida"));
     }
 
     private int countUnescaped(String text, char target) {

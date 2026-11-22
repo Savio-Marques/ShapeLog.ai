@@ -224,6 +224,9 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
                     commandRouter.rotearEstadoVoz(user, audioBytes, chatId, this);
                 } else {
                     meterRegistry.counter("shapelog.bot.updates", "type", "other").increment();
+                    if (isUnsupportedMedia(update.getMessage())) {
+                        enviarMensagemMarkdown(chatId, messageFormatter.formatUnsupportedMedia());
+                    }
                 }
             }
         } catch (Exception e) {
@@ -305,9 +308,40 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
         try {
             return telegramClient.execute(builder.build());
         } catch (TelegramApiException e) {
-            log.warn("Falha ao enviar mensagem MarkdownV2 para chatId={}: {}", chatId, e.getMessage());
+            log.warn("Falha ao enviar mensagem MarkdownV2 para chatId={}, usando fallback texto simples: {}", chatId, e.getMessage());
+            return enviarFallbackTextoSimples(chatId, texto, keyboard);
+        }
+    }
+
+    private Message enviarFallbackTextoSimples(long chatId, String markdownText, InlineKeyboardMarkup keyboard) {
+        String plain = stripMarkdownEscapes(markdownText);
+        if (plain.length() > 4000) {
+            plain = plain.substring(0, 3999) + "…";
+        }
+        SendMessage.SendMessageBuilder<?, ?> builder = SendMessage.builder()
+                .chatId(chatId)
+                .text(plain);
+        if (keyboard != null) {
+            builder.replyMarkup(keyboard);
+        }
+        try {
+            return telegramClient.execute(builder.build());
+        } catch (TelegramApiException fallbackEx) {
+            log.warn("Falha também no fallback texto simples para chatId={}: {}", chatId, fallbackEx.getMessage());
             return null;
         }
+    }
+
+    private String stripMarkdownEscapes(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("\\\\([_*\\[\\]()~`>#+\\-=|{}.!\\\\])", "$1");
+    }
+
+    private boolean isUnsupportedMedia(Message msg) {
+        return msg != null && (msg.hasPhoto() || msg.hasAudio() || msg.hasDocument()
+                || msg.hasVideo() || msg.hasVideoNote() || msg.hasSticker());
     }
 
     @Override

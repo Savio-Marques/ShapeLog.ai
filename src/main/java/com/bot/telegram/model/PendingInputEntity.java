@@ -10,7 +10,13 @@ import lombok.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "pending_inputs", indexes = {@Index(name = "idx_pending_inputs_expires", columnList = "expiresAt")})
+@Table(
+        name = "pending_inputs",
+        indexes = {
+                @Index(name = "idx_pending_inputs_expires", columnList = "expiresAt"),
+                @Index(name = "idx_pending_inputs_chat_id", columnList = "chatId")
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -19,10 +25,11 @@ import java.time.Instant;
 public class PendingInputEntity {
 
     @Id
-    private Long chatId;
-
     @Column(nullable = false, length = 32)
     private String token;
+
+    @Column(nullable = false)
+    private Long chatId;
 
     @Column(name = "text_content", columnDefinition = "TEXT")
     private String textContent;

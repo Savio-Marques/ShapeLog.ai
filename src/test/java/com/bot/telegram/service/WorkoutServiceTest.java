@@ -14,14 +14,12 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class WorkoutServiceTest {
@@ -96,7 +94,7 @@ class WorkoutServiceTest {
         when(workoutRepository.findById(15L)).thenReturn(Optional.of(existente));
 
         WorkoutDto dtoVazio = WorkoutDto.builder().exercises(List.of()).build();
-        when(geminiService.parseWorkout(any(), any())).thenReturn(dtoVazio);
+        when(geminiService.parseExerciseUpdate(any(), any(), any())).thenReturn(dtoVazio);
 
         assertThrows(IllegalArgumentException.class, () ->
                 workoutService.editExerciseById(15L, "ex-1", "texto sem exercicio", null));
@@ -154,6 +152,139 @@ class WorkoutServiceTest {
         inOrder.verify(txManager).getTransaction(any());
         inOrder.verify(workoutRepository).save(any(WorkoutSession.class));
         inOrder.verify(txManager).commit(any());
+    }
+
+    @Test
+    void addExercisesOrCreateWorkout_iaRetornandoIdUmEmTodasChamadas_deveGerarIdsUnicosEAtualizarExercicioCorreto() {
+        WorkoutSession session = WorkoutSession.builder()
+                .id(15L)
+                .user(testUser)
+                .rawInput("Pull")
+                .exercisesJson("[]")
+                .build();
+
+        AtomicInteger callCount = new AtomicInteger(0);
+        when(geminiService.parseWorkout(anyString(), isNull())).thenAnswer(inv -> {
+            int n = callCount.incrementAndGet();
+            return WorkoutDto.builder()
+                    .description("Pull")
+                    .exercises(List.of(WorkoutDto.ExerciseDto.builder()
+                            .id("1") // Gemini frequentemente envia "1"
+                            .name("Exercicio " + n)
+                            .series(List.of(WorkoutDto.SeriesDto.builder().reps(10).weight(20.0).build()))
+                            .build()))
+                    .build();
+        });
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
+                .thenReturn(Optional.of(session));
+        when(workoutRepository.findById(15L)).thenReturn(Optional.of(session));
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        workoutService.addExercisesOrCreateWorkout(testUser, "supino", null, 1);
+        workoutService.addExercisesOrCreateWorkout(testUser, "triceps", null, 2);
+        workoutService.addExercisesOrCreateWorkout(testUser, "rosca", null, 3);
+
+        List<WorkoutDto.ExerciseDto> saved = workoutService.deserializeExercises(session.getExercisesJson());
+        assertEquals(3, saved.size());
+        assertNotEquals("1", saved.get(0).getId());
+        assertNotEquals("1", saved.get(1).getId());
+        assertNotEquals("1", saved.get(2).getId());
+        assertNotEquals(saved.get(0).getId(), saved.get(1).getId());
+        assertNotEquals(saved.get(1).getId(), saved.get(2).getId());
+        assertNotEquals(saved.get(0).getId(), saved.get(2).getId());
+
+        // Editar especificamente o 2º exercício ("Exercicio 2") mantendo o 1º ("Exercicio 1") intacto
+        String secondId = saved.get(1).getId();
+        WorkoutDto editedDto = WorkoutDto.builder()
+                .exercises(List.of(WorkoutDto.ExerciseDto.builder()
+                        .id("1")
+                        .name("Triceps corda")
+                        .series(List.of(WorkoutDto.SeriesDto.builder().reps(8).weight(20.0).build()))
+                        .build()))
+                .build();
+        when(geminiService.parseExerciseUpdate(argThat(orig -> "Exercicio 2".equals(orig.getName())), eq("4x8 20kg"), isNull()))
+                .thenReturn(editedDto);
+
+        workoutService.editExerciseById(15L, secondId, "4x8 20kg", null);
+
+        List<WorkoutDto.ExerciseDto> afterEdit = workoutService.deserializeExercises(session.getExercisesJson());
+        assertEquals("Exercicio 1", afterEdit.get(0).getName());
+        assertEquals("Triceps corda", afterEdit.get(1).getName());
+        assertEquals(secondId, afterEdit.get(1).getId());
+        assertEquals("Exercicio 3", afterEdit.get(2).getName());
+    }
+
+    @Test
+    void addExercisesOrCreateWorkout_sessaoLegadaComIdsDuplicados_deveSanearAutomaticamente() {
+        WorkoutSession legacy = WorkoutSession.builder()
+                .id(16L)
+                .user(testUser)
+                .rawInput("Pull")
+                .exercisesJson("[{\"id\":\"1\",\"name\":\"Supino\",\"series\":[]},{\"id\":\"1\",\"name\":\"Tríceps\",\"series\":[]}]")
+                .build();
+
+        when(workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(eq(testUser), any(), any()))
+                .thenReturn(Optional.of(legacy));
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(geminiService.parseWorkout(anyString(), isNull())).thenReturn(
+                WorkoutDto.builder().exercises(List.of(WorkoutDto.ExerciseDto.builder().id("1").name("Remada").build())).build()
+        );
+
+        workoutService.addExercisesOrCreateWorkout(testUser, "remada 3x10", null, 5);
+        List<WorkoutDto.ExerciseDto> list = workoutService.deserializeExercises(legacy.getExercisesJson());
+        assertEquals(3, list.size());
+        assertNotEquals(list.get(0).getId(), list.get(1).getId());
+        assertNotEquals(list.get(1).getId(), list.get(2).getId());
+        assertNotEquals(list.get(0).getId(), list.get(2).getId());
+    }
+
+    @Test
+    void editExerciseById_deveChamarParseExerciseUpdateForaDaTransacao() {
+        PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
+        when(txManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        TransactionTemplate txTemplate = new TransactionTemplate(txManager);
+        WorkoutService serviceComTx = new WorkoutService(geminiService, workoutRepository, objectMapper, new SimpleMeterRegistry(), txTemplate);
+
+        WorkoutSession existing = WorkoutSession.builder()
+                .id(44L)
+                .user(testUser)
+                .exercisesJson("[{\"id\":\"abc\",\"name\":\"Supino\",\"series\":[{\"reps\":10,\"weight\":60.0}]}]")
+                .build();
+        when(workoutRepository.findById(44L)).thenReturn(Optional.of(existing));
+        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        WorkoutDto updatedDto = WorkoutDto.builder()
+                .exercises(List.of(WorkoutDto.ExerciseDto.builder()
+                        .name("Supino")
+                        .series(List.of(WorkoutDto.SeriesDto.builder().reps(10).weight(70.0).build()))
+                        .build()))
+                .build();
+        when(geminiService.parseExerciseUpdate(argThat(ex -> "Supino".equals(ex.getName())), eq("70kg"), isNull()))
+                .thenReturn(updatedDto);
+
+        serviceComTx.editExerciseById(44L, "abc", "70kg", null);
+
+        InOrder inOrder = inOrder(geminiService, txManager, workoutRepository);
+        inOrder.verify(geminiService).parseExerciseUpdate(any(), eq("70kg"), isNull());
+        inOrder.verify(txManager).getTransaction(any());
+        inOrder.verify(workoutRepository).save(any(WorkoutSession.class));
+        inOrder.verify(txManager).commit(any());
+    }
+
+    @Test
+    void removeExerciseById_ultimoExercicio_deveExcluirSessaoVaziaDoBanco() {
+        WorkoutSession existente = WorkoutSession.builder()
+                .id(31L)
+                .user(testUser)
+                .rawInput("Peito")
+                .exercisesJson("[{\"id\":\"ex-only\",\"name\":\"Supino\",\"series\":[]}]")
+                .build();
+        when(workoutRepository.findById(31L)).thenReturn(Optional.of(existente));
+
+        workoutService.removeExerciseById(31L, "ex-only");
+
+        verify(workoutRepository).delete(existente);
+        verify(workoutRepository, never()).save(any());
     }
 
     @Test
@@ -216,7 +347,8 @@ class WorkoutServiceTest {
         WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(12).weight(22.0).build();
         WorkoutDto.ExerciseDto editedEx = WorkoutDto.ExerciseDto.builder().name("Crucifixo Inclinado").series(List.of(series)).build();
         WorkoutDto dto = WorkoutDto.builder().exercises(List.of(editedEx)).build();
-        when(geminiService.parseWorkout(eq("crucifixo inclinado 12 reps 22kg"), isNull())).thenReturn(dto);
+        when(geminiService.parseExerciseUpdate(argThat(ex -> "Crucifixo".equals(ex.getName())), eq("crucifixo inclinado 12 reps 22kg"), isNull()))
+                .thenReturn(dto);
 
         WorkoutSession updated = workoutService.editExerciseById(26L, "ex-2", "crucifixo inclinado 12 reps 22kg", null);
         assertTrue(updated.getExercisesJson().contains("Crucifixo Inclinado"));

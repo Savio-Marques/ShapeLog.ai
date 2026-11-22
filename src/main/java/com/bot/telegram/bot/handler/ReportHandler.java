@@ -41,14 +41,19 @@ public class ReportHandler {
 
     public void gerarRelatorio(UserTelegram user, String arg, long chatId, BotActionSender sender) {
         try {
-            LocalDate date = LocalDate.now(appZoneId);
+            LocalDate today = LocalDate.now(appZoneId);
+            LocalDate date = today;
             if (arg != null && !arg.isEmpty()) {
                 if ("ontem".equalsIgnoreCase(arg)) {
-                    date = date.minusDays(1);
+                    date = today.minusDays(1);
                 } else {
-                    date = parseDate(arg);
+                    date = parseDate(arg, today);
                     if (date == null) {
                         sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidDateFormat());
+                        return;
+                    }
+                    if (date.isAfter(today)) {
+                        sender.enviarMensagemMarkdown(chatId, messageFormatter.formatFutureDateNotAllowed());
                         return;
                     }
                 }
@@ -114,13 +119,16 @@ public class ReportHandler {
         }
     }
 
-    private LocalDate parseDate(String input) {
+    private LocalDate parseDate(String input, LocalDate today) {
         try {
             if (input.matches("\\d{2}/\\d{2}/\\d{4}")) {
                 return LocalDate.parse(input, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
             } else if (input.matches("\\d{2}/\\d{2}")) {
-                String fullDate = input + "/" + LocalDate.now(appZoneId).getYear();
-                return LocalDate.parse(fullDate, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                LocalDate parsed = LocalDate.parse(input + "/" + today.getYear(), DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                if (parsed.isAfter(today)) {
+                    parsed = parsed.minusYears(1);
+                }
+                return parsed;
             }
         } catch (Exception ignored) {
         }

@@ -105,7 +105,7 @@ public class GeminiService {
                 Extraia:
                 - "description": modalidade ou grupamento muscular (ex: 'Peito', 'Costas', 'Cardio', 'Corrida', 'CrossFit', 'Hyrox')
                 - "durationMinutes": duração total estimada em minutos como número inteiro (quando informada; caso contrário null)
-                - "exercises": lista de exercícios ou blocos/estações realizados:
+                - "exercises": lista de exercícios ou blocos/estações realizados (deixe o campo "id" sempre null):
                   * Para musculação/força: preencha "name" (ex: 'Supino Inclinado') e "series" detalhando "reps" e "weight" (kg) individualmente para cada série (nunca agrupe séries com cargas ou repetições diferentes). Use "details" apenas se houver observação extra relevante (ex: 'Drop-set').
                   * Para cardio, corrida, CrossFit, Hyrox, natação, lutas, isometria ou outras modalidades: deixe "series" como lista vazia [] e preencha "details" com itens curtos no formato "Chave: Valor" (ex: ["Duração: 30 min", "Velocidade: 10 km/h"], ["Distância: 10 km", "Pace: 5:12/km"], ["Movimentos: 5 pull-ups, 10 push-ups", "Resultado: 12 rounds"]). Em circuitos ou Hyrox com múltiplas estações, separe cada estação em um item de "exercises".
                 """;
@@ -113,6 +113,46 @@ public class GeminiService {
             return callAudioPrompt("workout", "Analise o áudio em anexo contendo o relato do treino realizado.\n" + instructions, audioBytes, WorkoutDto.class);
         }
         return callTextPrompt("workout", "Analise o treino informado: \"" + text + "\".\n" + instructions, WorkoutDto.class);
+    }
+
+    public WorkoutDto parseExerciseUpdate(WorkoutDto.ExerciseDto previousExercise, String text, byte[] audioBytes) {
+        validateInput(text, audioBytes);
+        String originalSummary = formatExerciseContext(previousExercise);
+        String instruction = """
+                Exercício original registrado: %s.
+                Se o usuário enviar uma correção parcial (alterar apenas nome, carga, repetições, quantidade de séries ou detalhes), aplique a alteração mantendo o restante das informações do exercício original.
+                Se o usuário descrever um exercício totalmente diferente, substitua por completo.
+                Retorne um JSON com o campo "exercises" contendo exatamente 1 exercício atualizado (deixe o campo "id" sempre null):
+                - Para musculação/força: preencha "name" e "series" detalhando "reps" e "weight" (kg) individualmente para cada série.
+                - Para cardio, corrida, CrossFit, Hyrox ou outras modalidades: deixe "series" como [] e preencha "details" com itens curtos no formato "Chave: Valor".
+                """.formatted(originalSummary);
+        if (hasAudio(audioBytes)) {
+            return callAudioPrompt("workout", "Analise o áudio em anexo contendo uma correção ou substituição de exercício.\n" + instruction, audioBytes, WorkoutDto.class);
+        }
+        return callTextPrompt("workout", "Solicitação do usuário para editar o exercício: \"" + text + "\".\n" + instruction, WorkoutDto.class);
+    }
+
+    private String formatExerciseContext(WorkoutDto.ExerciseDto ex) {
+        if (ex == null) {
+            return "Exercício sem detalhes";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(ex.getName() != null && !ex.getName().isBlank() ? ex.getName().trim() : "Exercício");
+        if (ex.getSeries() != null && !ex.getSeries().isEmpty()) {
+            sb.append(" (séries: ");
+            for (int i = 0; i < ex.getSeries().size(); i++) {
+                WorkoutDto.SeriesDto s = ex.getSeries().get(i);
+                if (i > 0) sb.append("; ");
+                int reps = s != null && s.getReps() != null ? s.getReps() : 0;
+                double weight = s != null && s.getWeight() != null ? s.getWeight() : 0.0;
+                sb.append(i + 1).append("ª: ").append(reps).append(" reps, ").append(weight).append(" kg");
+            }
+            sb.append(")");
+        }
+        if (ex.getDetails() != null && !ex.getDetails().isEmpty()) {
+            sb.append(" [detalhes: ").append(String.join(", ", ex.getDetails())).append("]");
+        }
+        return sb.toString();
     }
 
     public GoalDto parseGoal(String text, byte[] audioBytes, int currentCal, int currentProt, int currentCarb, int currentFat) {

@@ -47,7 +47,14 @@ public class WorkoutHandler {
         try {
             boolean jaExistia = workoutService.getLatestWorkoutForToday(user).isPresent();
             WorkoutSession draft = workoutService.createOrUpdateDraftWorkout(user, titulo, userMessageId);
-            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWorkoutStarted(titulo, false, jaExistia));
+            Message sent = sender.enviarMensagemMarkdown(
+                    chatId,
+                    messageFormatter.formatWorkoutStarted(titulo, false, jaExistia),
+                    keyboardFactory.criarBotaoSairModoTreino()
+            );
+            if (draft != null && sent != null) {
+                draft.setBotMessageId(sent.getMessageId());
+            }
             return draft;
         } catch (Exception e) {
             log.error("Erro ao criar rascunho de treino para chatId={}", chatId, e);
@@ -59,7 +66,14 @@ public class WorkoutHandler {
     public WorkoutSession criarNovoTreino(UserTelegram user, String titulo, Integer userMessageId, long chatId, BotActionSender sender) {
         try {
             WorkoutSession draft = workoutService.createNewDraftWorkout(user, titulo, userMessageId);
-            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWorkoutStarted(titulo, true, false));
+            Message sent = sender.enviarMensagemMarkdown(
+                    chatId,
+                    messageFormatter.formatWorkoutStarted(titulo, true, false),
+                    keyboardFactory.criarBotaoSairModoTreino()
+            );
+            if (draft != null && sent != null) {
+                draft.setBotMessageId(sent.getMessageId());
+            }
             return draft;
         } catch (Exception e) {
             log.error("Erro ao criar novo treino para chatId={}", chatId, e);
@@ -68,18 +82,20 @@ public class WorkoutHandler {
         }
     }
 
-    public void registrarExercicioOuCriarTreino(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
+    public boolean registrarExercicioOuCriarTreino(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, messageFormatter.formatLoading("Analisando exercício"));
         try {
             WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesOrCreateWorkout(user, text, audioBytes, userMessageId);
             deleteTemp(sender, chatId, tempMsg);
             enviarCardsExercicios(result, chatId, sender);
+            return true;
         } catch (Exception e) {
             log.error("Erro ao registrar exercício para chatId={}", chatId, e);
             deleteTemp(sender, chatId, tempMsg);
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
                     errMsg != null ? errMsg : "Ocorreu um erro ao processar o exercício."));
+            return false;
         }
     }
 
@@ -96,7 +112,7 @@ public class WorkoutHandler {
         }
     }
 
-    public void atualizarExercicioEditado(Long workoutId, String exerciseId, Integer botMessageId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+    public boolean atualizarExercicioEditado(Long workoutId, String exerciseId, Integer botMessageId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, messageFormatter.formatLoading("Atualizando exercício"));
         try {
             WorkoutSession session = workoutService.editExerciseById(workoutId, exerciseId, text, audioBytes);
@@ -105,12 +121,16 @@ public class WorkoutHandler {
             LocalDate workoutDate = toLocalDate(session.getCreatedAt());
             deleteTemp(sender, chatId, tempMsg);
             if (idx >= 0 && idx < allEx.size()) {
-                List<WorkoutDto.ExerciseDto> singleList = List.of(allEx.get(idx));
+                WorkoutDto.ExerciseDto updatedEx = allEx.get(idx);
+                List<WorkoutDto.ExerciseDto> singleList = List.of(updatedEx);
                 InlineKeyboardMarkup kb = keyboardFactory.criarBotoesExercicios(workoutId, singleList, workoutDate);
                 if (botMessageId != null) {
-                    String editedCard = messageFormatter.formatExercisesAdded(singleList, null, true);
+                    String workoutTitle = (idx == 0 && session.getRawInput() != null && !session.getRawInput().isBlank() && !session.getRawInput().startsWith("["))
+                            ? session.getRawInput()
+                            : null;
+                    String editedCard = messageFormatter.formatExercisesAdded(singleList, workoutTitle, false, true);
                     sender.editarMensagemBot(chatId, botMessageId, editedCard, kb);
-                    sender.enviarMensagemMarkdown(chatId, messageFormatter.formatItemUpdated("Exercício", false),
+                    sender.enviarMensagemMarkdown(chatId, messageFormatter.formatExerciseUpdatedConfirmation(updatedEx),
                             keyboardFactory.criarBotaoVerRelatorio(workoutDate));
                 } else {
                     sender.enviarMensagemMarkdown(chatId, messageFormatter.formatExercisesAdded(singleList), kb);
@@ -119,12 +139,14 @@ public class WorkoutHandler {
                 sender.enviarMensagemMarkdown(chatId, messageFormatter.formatItemUpdated("Exercício", false),
                         keyboardFactory.criarBotaoVerRelatorio(workoutDate));
             }
+            return true;
         } catch (Exception e) {
             log.error("Erro ao atualizar exercício id={} do treino id={} para chatId={}", exerciseId, workoutId, chatId, e);
             deleteTemp(sender, chatId, tempMsg);
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
                     errMsg != null ? errMsg : "Erro ao atualizar o exercício."));
+            return false;
         }
     }
 

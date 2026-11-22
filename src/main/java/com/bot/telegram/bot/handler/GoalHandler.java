@@ -34,20 +34,21 @@ public class GoalHandler {
         this.keyboardFactory = keyboardFactory;
     }
 
-    public void mostrarMetasAtuais(UserTelegram user, long chatId, BotActionSender sender) {
-        sender.enviarMensagemMarkdown(chatId, messageFormatter.formatCurrentGoals(user), keyboardFactory.criarBotaoCancelarEstado());
+    public Message mostrarMetasAtuais(UserTelegram user, long chatId, BotActionSender sender) {
+        return sender.enviarMensagemMarkdown(chatId, messageFormatter.formatCurrentGoals(user), keyboardFactory.criarBotaoCancelarEstado());
     }
 
-    public void salvarMetasDiretas(UserTelegram user, int cal, int prot, int carb, int fat, long chatId, BotActionSender sender) {
+    public boolean salvarMetasDiretas(UserTelegram user, int cal, int prot, int carb, int fat, long chatId, BotActionSender sender) {
         if (cal <= 0 || prot <= 0 || carb <= 0 || fat <= 0) {
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalValues());
-            return;
+            return false;
         }
         userService.updateGoals(user, cal, prot, carb, fat);
         sender.enviarMensagemMarkdown(chatId, messageFormatter.formatGoalsUpdated(cal, prot, carb, fat));
+        return true;
     }
 
-    public void sugerirMetasPorIA(UserTelegram user, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+    public boolean sugerirMetasPorIA(UserTelegram user, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, messageFormatter.formatLoading("Calculando metas"));
         try {
             int curCal = (user != null && user.getTargetCalories() != null && user.getTargetCalories() > 0) ? user.getTargetCalories() : DEFAULT_CALORIES;
@@ -65,12 +66,14 @@ public class GoalHandler {
 
             deleteTemp(sender, chatId, tempMsg);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatGoalSuggestion(dto), keyboardFactory.criarBotoesConfirmacaoMeta(dto));
+            return true;
         } catch (Exception e) {
             log.error("Erro ao calcular sugestão de metas para chatId={}", chatId, e);
             deleteTemp(sender, chatId, tempMsg);
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
                     errMsg != null ? errMsg : "Não foi possível calcular as metas no momento. Tente informar os 4 números (ex: /meta 2000 150 200 60)."));
+            return false;
         }
     }
 

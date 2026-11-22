@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -60,7 +61,7 @@ class GoalHandlerTest {
                 .build();
         when(geminiService.parseGoal("quero 2200 kcal", null, 2000, 150, 200, 60)).thenReturn(dto);
 
-        goalHandler.sugerirMetasPorIA(user, "quero 2200 kcal", null, 100L, sender);
+        assertTrue(goalHandler.sugerirMetasPorIA(user, "quero 2200 kcal", null, 100L, sender));
 
         verify(userService, never()).updateGoals(any(), anyInt(), anyInt(), anyInt(), anyInt());
         verify(sender).deletarMensagem(100L, 42);
@@ -77,8 +78,8 @@ class GoalHandlerTest {
     }
 
     @Test
-    void salvarMetasDiretas_comValorZero_deveRejeitarSemSalvar() {
-        goalHandler.salvarMetasDiretas(user, 0, 150, 200, 60, 100L, sender);
+    void salvarMetasDiretas_comValorZero_deveRejeitarERetornarFalse() {
+        assertFalse(goalHandler.salvarMetasDiretas(user, 0, 150, 200, 60, 100L, sender));
         verify(userService, never()).updateGoals(any(), anyInt(), anyInt(), anyInt(), anyInt());
         verify(sender).enviarMensagemMarkdown(eq(100L), contains("maiores que zero"));
     }

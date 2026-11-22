@@ -13,12 +13,16 @@ import org.slf4j.MDC;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.api.objects.chat.Chat;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
+import org.telegram.telegrambots.meta.api.objects.photo.PhotoSize;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.ArrayList;
@@ -69,6 +73,14 @@ class FitnessBotTest {
 
     private Update buildTextUpdate(long chatId, String text) {
         return buildMessageUpdate(chatId, text, null);
+    }
+
+    private Update buildPhotoUpdate(long chatId) {
+        Update update = buildMessageUpdate(chatId, null, null);
+        PhotoSize photo = new PhotoSize();
+        photo.setFileId("photo-1");
+        update.getMessage().setPhoto(List.of(photo));
+        return update;
     }
 
     private Update buildCallbackUpdate(long chatId, String callbackId, String data) {
@@ -128,6 +140,43 @@ class FitnessBotTest {
     }
 
     @Test
+    void enviarMensagemMarkdown_quandoTelegramRejeitarMarkdown_deveUsarFallbackTextoSimples() throws Exception {
+        FitnessBot realBot = new FitnessBot(telegramClient, userService, commandRouter, messageFormatter, new SimpleMeterRegistry(), Runnable::run);
+        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder().keyboard(List.of()).build();
+        Message fallbackSent = new Message();
+        fallbackSent.setMessageId(777);
+
+        when(telegramClient.execute(any(SendMessage.class)))
+                .thenThrow(new TelegramApiException("Bad Request: can't parse entities"))
+                .thenReturn(fallbackSent);
+
+        Message result = realBot.enviarMensagemMarkdown(100L, "✅ *Refeição registrada\\!*\nTexto \\(teste\\)\\.", kb);
+        assertEquals(777, result.getMessageId());
+
+        ArgumentCaptor<SendMessage> captor = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, times(2)).execute(captor.capture());
+
+        SendMessage firstAttempt = captor.getAllValues().get(0);
+        SendMessage fallbackAttempt = captor.getAllValues().get(1);
+        assertEquals("MarkdownV2", firstAttempt.getParseMode());
+        assertNull(fallbackAttempt.getParseMode());
+        assertEquals("✅ *Refeição registrada!*\nTexto (teste).", fallbackAttempt.getText());
+        assertEquals(kb, fallbackAttempt.getReplyMarkup());
+    }
+
+    @Test
+    void processUpdate_fotoOuMidiaNaoSuportada_deveResponderComAvisoAmigavel() {
+        FitnessBot bot = createSpyBot(Runnable::run);
+        UserTelegram approved = UserTelegram.builder().id(100L).firstName("Sávio").approved(true).build();
+        when(userService.getOrCreateUser(eq(100L), anyString(), anyString())).thenReturn(approved);
+
+        bot.processUpdate(buildPhotoUpdate(100L));
+
+        verify(bot).enviarMensagemMarkdown(eq(100L), contains("Formato não suportado"));
+        verifyNoInteractions(commandRouter);
+    }
+
+    @Test
     void processUpdate_audioAcimaDoLimiteDeDuracaoOuTamanho_deveRejeitarSemBaixar() {
         FitnessBot bot = createSpyBot(Runnable::run);
         UserTelegram approvedUser = UserTelegram.builder().id(100L).firstName("Sávio").approved(true).build();
@@ -181,7 +230,6 @@ class FitnessBotTest {
         assertEquals("cb-1", captor.getValue().getCallbackQueryId());
         assertEquals("Confirme a exclusão abaixo", captor.getValue().getText());
 
-        // Callback em que roteador não envia toast explícito deve ainda receber fallback vazio no finally
         reset(telegramClient);
         when(telegramClient.execute(any(AnswerCallbackQuery.class))).thenReturn(true);
         doNothing().when(commandRouter).rotearCallback(eq(approved), eq("qualquer"), eq(55), eq(100L), any());

@@ -177,14 +177,20 @@ public class MessageFormatter {
     }
 
     public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises) {
-        return formatExercisesAdded(exercises, null, false);
+        return formatExercisesAdded(exercises, null, false, false);
     }
 
     public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises, String autoCreatedWorkoutTitle) {
-        return formatExercisesAdded(exercises, autoCreatedWorkoutTitle, false);
+        boolean autoCreated = autoCreatedWorkoutTitle != null && !autoCreatedWorkoutTitle.isBlank();
+        return formatExercisesAdded(exercises, autoCreatedWorkoutTitle, autoCreated, false);
     }
 
     public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises, String autoCreatedWorkoutTitle, boolean edited) {
+        boolean autoCreated = autoCreatedWorkoutTitle != null && !autoCreatedWorkoutTitle.isBlank();
+        return formatExercisesAdded(exercises, autoCreatedWorkoutTitle, autoCreated, edited);
+    }
+
+    public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises, String workoutTitle, boolean autoCreated, boolean edited) {
         if (exercises == null || exercises.isEmpty()) {
             return "⚠️ Nenhum exercício reconhecido\\.";
         }
@@ -195,19 +201,35 @@ public class MessageFormatter {
         }
         sb.append("\n\n");
 
-        if (autoCreatedWorkoutTitle != null && !autoCreatedWorkoutTitle.isBlank()) {
+        if (workoutTitle != null && !workoutTitle.isBlank()) {
             sb.append("🏋️ *Treino:* ")
-              .append(escapeMarkdown(autoCreatedWorkoutTitle.trim()))
-              .append(" _\\(criado automaticamente\\)_\n\n");
+              .append(escapeMarkdown(workoutTitle.trim()));
+            if (autoCreated) {
+                sb.append(" _\\(criado automaticamente\\)_");
+            }
+            sb.append("\n\n");
         }
 
+        int shown = 0;
         for (int i = 0; i < exercises.size(); i++) {
-            String block = buildDetailedExerciseBlock(exercises.get(i));
+            int remainingBudget = (MAX_REPORT_LENGTH - REPORT_FOOTER_RESERVE) - sb.length();
+            if (remainingBudget <= 40) {
+                int omitted = exercises.size() - shown;
+                if (shown > 0) sb.append("\n\n");
+                sb.append(toBlockquote("… \\+" + omitted + " exercício\\(s\\) omitido\\(s\\) pelo limite do Telegram"));
+                break;
+            }
+            String block = buildDetailedExerciseBlock(exercises.get(i), remainingBudget);
             if (!block.isEmpty()) {
-                if (i > 0) {
-                    sb.append("\n\n");
+                String sep = shown > 0 ? "\n\n" : "";
+                String quoted = toBlockquote(block);
+                if (sb.length() + sep.length() + quoted.length() > MAX_REPORT_LENGTH - REPORT_FOOTER_RESERVE && shown > 0) {
+                    int omitted = exercises.size() - shown;
+                    sb.append("\n\n").append(toBlockquote("… \\+" + omitted + " exercício\\(s\\) omitido\\(s\\) pelo limite do Telegram"));
+                    break;
                 }
-                sb.append(toBlockquote(block));
+                sb.append(sep).append(quoted);
+                shown++;
             }
         }
         return sb.toString().trim();
@@ -255,7 +277,7 @@ public class MessageFormatter {
         sb.append("📊 *Relatório · ").append(dateLabel).append("*\n\n")
           .append(calBar).append(" das calorias\n\n")
           .append("🔥 *Calorias:* ").append(code(formatInt(totalCal) + " / " + formatInt(t[0]))).append("\n")
-          .append("   ").append(calDelta).append("\n")
+          .append("↳ ").append(calDelta).append("\n")
           .append("💪 *Proteína:* ").append(code(formatNumber(totalProt) + " / " + formatInt(t[1]) + "g"))
           .append(" · ").append(protPct).append("%").append(protCheck).append("\n")
           .append("🍞 *Carbos:* ").append(code(formatNumber(totalCarb) + " / " + formatInt(t[2]) + "g"))
@@ -294,13 +316,82 @@ public class MessageFormatter {
     }
 
     public String formatEditMealPrompt() {
-        return "✏️ *Editando refeição*\n\n" +
-                toBlockquote("Diga o que corrigir \\(ex: _\"foram 150g de arroz\"_\\) ou descreva a refeição novamente\\.");
+        return formatEditMealPrompt(null);
+    }
+
+    public String formatEditMealPrompt(String mealSummary) {
+        StringBuilder quote = new StringBuilder();
+        if (mealSummary != null && !mealSummary.isBlank()) {
+            quote.append("🥗 ").append(escapeMarkdown(truncate(mealSummary.trim(), 90))).append("\n\n");
+        }
+        quote.append("Diga o que corrigir \\(ex: _\"foram 150g de arroz\"_\\) ou descreva a refeição novamente\\.");
+        return "✏️ *Editando refeição*\n\n" + toBlockquote(quote.toString());
     }
 
     public String formatEditExercisePrompt() {
-        return "✏️ *Editando exercício*\n\n" +
-                toBlockquote("Envie um texto ou áudio com os novos dados deste exercício\\.");
+        return formatEditExercisePrompt(null);
+    }
+
+    public String formatEditExercisePrompt(String exerciseSummary) {
+        StringBuilder quote = new StringBuilder();
+        if (exerciseSummary != null && !exerciseSummary.isBlank()) {
+            quote.append("🔹 ").append(escapeMarkdown(truncate(exerciseSummary.trim(), 90))).append("\n\n");
+        }
+        quote.append("Diga o que corrigir \\(ex: _\"foi com 20kg\"_, _\"o nome era Rosca direta\"_\\) ou descreva o exercício novamente\\.");
+        return "✏️ *Editando exercício*\n\n" + toBlockquote(quote.toString());
+    }
+
+    public String formatExerciseSummary(WorkoutDto.ExerciseDto ex) {
+        if (ex == null) {
+            return "Exercício";
+        }
+        String name = (ex.getName() != null && !ex.getName().isBlank()) ? ex.getName().trim() : "Exercício";
+        String compact = formatSeriesCompact(ex.getSeries());
+        if (!compact.isEmpty()) {
+            return name + " — " + compact;
+        }
+        if (ex.getDetails() != null && !ex.getDetails().isEmpty() && ex.getDetails().get(0) != null) {
+            return name + " — " + ex.getDetails().get(0).trim();
+        }
+        return name;
+    }
+
+    public String formatMealUpdatedConfirmation(Meal meal) {
+        StringBuilder sb = new StringBuilder("✅ *Refeição atualizada*");
+        if (meal != null) {
+            String desc = (meal.getDescription() != null && !meal.getDescription().isBlank())
+                    ? truncate(meal.getDescription().trim(), 70)
+                    : "Refeição";
+            int cal = meal.getCalories() != null ? meal.getCalories() : 0;
+            sb.append("\n\n").append(toBlockquote(
+                    "🥗 " + escapeMarkdown(desc) + " · " + code(formatInt(cal) + " kcal")
+            ));
+        }
+        return sb.toString();
+    }
+
+    public String formatExerciseUpdatedConfirmation(WorkoutDto.ExerciseDto ex) {
+        StringBuilder sb = new StringBuilder("✅ *Exercício atualizado*");
+        if (ex != null) {
+            String name = (ex.getName() != null && !ex.getName().isBlank()) ? ex.getName().trim() : "Exercício";
+            String compact = formatSeriesCompact(ex.getSeries());
+            StringBuilder summary = new StringBuilder("🔹 *").append(escapeMarkdown(truncate(name, 60))).append("*");
+            if (!compact.isEmpty()) {
+                summary.append(" — ").append(escapeMarkdown(compact));
+            } else if (ex.getDetails() != null && !ex.getDetails().isEmpty() && ex.getDetails().get(0) != null) {
+                summary.append(" — ").append(escapeMarkdown(truncate(ex.getDetails().get(0).trim(), 50)));
+            }
+            sb.append("\n\n").append(toBlockquote(summary.toString()));
+        }
+        return sb.toString();
+    }
+
+    public String formatUnsupportedMedia() {
+        return "📷 *Formato não suportado*\n\nEnvie sua refeição ou treino por *texto* ou *mensagem de voz*\\.";
+    }
+
+    public String formatFutureDateNotAllowed() {
+        return "⚠️ *Data futura não permitida*\n\nConsulte hoje ou uma data anterior \\(ex: /relatorio ontem ou /relatorio DD/MM\\)\\.";
     }
 
     public String formatWorkoutStarted(String title, boolean isNew, boolean renamed) {
@@ -361,7 +452,7 @@ public class MessageFormatter {
     }
 
     public String formatInvalidGoalValues() {
-        return "⚠️ Os valores das metas devem ser números inteiros maiores que zero\\.\n\n💡 Ex: " +
+        return "⚠️ Os valores das metas devem ser maiores que zero\\.\n\n💡 Ex: " +
                 code("/meta 2000 150 200 60");
     }
 
@@ -674,7 +765,7 @@ public class MessageFormatter {
         return lines;
     }
 
-    private String buildDetailedExerciseBlock(WorkoutDto.ExerciseDto ex) {
+    private String buildDetailedExerciseBlock(WorkoutDto.ExerciseDto ex, int maxCharsBudget) {
         if (ex == null) return "";
         String name = (ex.getName() != null && !ex.getName().isBlank()) ? ex.getName().trim() : "Exercício";
         StringBuilder sb = new StringBuilder();
@@ -686,10 +777,16 @@ public class MessageFormatter {
                 WorkoutDto.SeriesDto s = series.get(i);
                 int reps = normalizedReps(s);
                 double weight = normalizedWeight(s);
-                sb.append("\n• ").append(i + 1).append("ª · ").append(reps).append(" reps");
+                StringBuilder line = new StringBuilder("\n• ").append(i + 1).append("ª · ").append(reps).append(" reps");
                 if (weight > 0) {
-                    sb.append(" · ").append(escapeMarkdown(formatNumber(weight))).append(" kg");
+                    line.append(" · ").append(escapeMarkdown(formatNumber(weight))).append(" kg");
                 }
+                if (sb.length() + line.length() > maxCharsBudget - 60) {
+                    int omitted = series.size() - i;
+                    sb.append("\n… \\+").append(omitted).append(" série\\(s\\) omitida\\(s\\)");
+                    return sb.toString();
+                }
+                sb.append(line);
             }
         }
 
@@ -697,11 +794,23 @@ public class MessageFormatter {
         if (details != null && !details.isEmpty()) {
             for (String detail : details) {
                 if (detail != null && !detail.isBlank()) {
-                    sb.append("\n• ").append(escapeMarkdown(detail.trim()));
+                    String line = "\n• " + escapeMarkdown(detail.trim());
+                    if (sb.length() + line.length() > maxCharsBudget - 40) {
+                        sb.append("\n… detalhes omitidos");
+                        return sb.toString();
+                    }
+                    sb.append(line);
                 }
             }
         }
         return sb.toString();
+    }
+
+    private String truncate(String text, int maxLen) {
+        if (text == null || text.length() <= maxLen || maxLen < 2) {
+            return text != null ? text : "";
+        }
+        return text.substring(0, maxLen - 1).trim() + "…";
     }
 
     private int[] resolveTargets(UserTelegram user) {
@@ -718,7 +827,7 @@ public class MessageFormatter {
     private String buildProgressBar(double current, int target) {
         int pct = calculatePercentage(current, target);
         int filled = target > 0 ? (int) Math.round(Math.min(1.0, Math.max(0.0, current / target)) * 10) : 0;
-        return code("█".repeat(filled) + "░".repeat(10 - filled)) + " " + pct + "%";
+        return code("▰".repeat(filled) + "▱".repeat(10 - filled)) + " " + pct + "%";
     }
 
     private int calculatePercentage(double current, int target) {

@@ -45,7 +45,7 @@ public class MealHandler {
         this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
-    public void registrarRefeicao(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
+    public boolean registrarRefeicao(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, messageFormatter.formatLoading("Analisando refeição"));
         try {
             Meal meal = mealService.registerMeal(user, text, audioBytes, userMessageId);
@@ -57,16 +57,18 @@ public class MealHandler {
             if (botMsg != null) {
                 mealService.saveBotMessageId(meal.getId(), botMsg.getMessageId());
             }
+            return true;
         } catch (Exception e) {
             log.error("Erro ao registrar refeição para chatId={}", chatId, e);
             deleteTemp(sender, chatId, tempMsg);
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
                     errMsg != null ? errMsg : "Ocorreu um erro ao processar e salvar a refeição."));
+            return false;
         }
     }
 
-    public void atualizarRefeicaoEditada(UserTelegram user, Long mealId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
+    public boolean atualizarRefeicaoEditada(UserTelegram user, Long mealId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, messageFormatter.formatLoading("Atualizando refeição"));
         try {
             Meal meal = mealService.updateMeal(mealId, text, audioBytes);
@@ -78,7 +80,7 @@ public class MealHandler {
                 sender.editarMensagemBot(chatId, meal.getBotMessageId(),
                         editedCard,
                         keyboardFactory.criarBotoesRefeicao(meal.getId(), mealDate));
-                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatItemUpdated("Refeição", true),
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatMealUpdatedConfirmation(meal),
                         keyboardFactory.criarBotaoVerRelatorio(mealDate));
             } else {
                 String formattedText = messageFormatter.formatMealRegistered(meal, dailyReport, mealDate);
@@ -87,12 +89,14 @@ public class MealHandler {
                     mealService.saveBotMessageId(meal.getId(), botMsg.getMessageId());
                 }
             }
+            return true;
         } catch (Exception e) {
             log.error("Erro ao atualizar refeição id={} para chatId={}", mealId, chatId, e);
             deleteTemp(sender, chatId, tempMsg);
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
                     errMsg != null ? errMsg : "Erro ao atualizar a refeição."));
+            return false;
         }
     }
 

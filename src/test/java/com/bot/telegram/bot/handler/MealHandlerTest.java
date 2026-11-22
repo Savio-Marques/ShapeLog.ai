@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -86,8 +87,9 @@ class MealHandlerTest {
         when(reportService.getReportForDate(user, today)).thenReturn(report);
         when(sender.enviarMensagemMarkdown(eq(100L), anyString(), any(InlineKeyboardMarkup.class))).thenReturn(sentBotMsg);
 
-        mealHandler.registrarRefeicao(user, "2 ovos", null, 5, 100L, sender);
+        boolean result = mealHandler.registrarRefeicao(user, "2 ovos", null, 5, 100L, sender);
 
+        assertTrue(result);
         verify(sender).deletarMensagem(100L, 10);
         verify(sender).enviarMensagemMarkdown(
                 eq(100L),
@@ -128,8 +130,9 @@ class MealHandlerTest {
         when(mealService.updateMeal(1L, "foram 3 ovos", null)).thenReturn(updated);
         when(reportService.getReportForDate(user, today)).thenReturn(report);
 
-        mealHandler.atualizarRefeicaoEditada(user, 1L, "foram 3 ovos", null, 100L, sender);
+        boolean result = mealHandler.atualizarRefeicaoEditada(user, 1L, "foram 3 ovos", null, 100L, sender);
 
+        assertTrue(result);
         verify(sender).deletarMensagem(100L, 11);
         verify(sender).editarMensagemBot(
                 eq(100L),
@@ -139,8 +142,20 @@ class MealHandlerTest {
         );
         verify(sender).enviarMensagemMarkdown(
                 eq(100L),
-                contains("Refeição atualizada"),
+                argThat(msg -> msg.contains("Refeição atualizada") && msg.contains("3 ovos mexidos") && msg.contains("300 kcal")),
                 any(InlineKeyboardMarkup.class)
         );
+    }
+
+    @Test
+    void registrarRefeicao_quandoFalhar_deveRetornarFalseEEnviarAviso() {
+        when(mealService.registerMeal(eq(user), eq("algo inválido"), isNull(), eq(9)))
+                .thenThrow(new IllegalArgumentException("Não foi possível identificar alimentos."));
+        when(sender.resolverMensagemDeErro(any())).thenReturn("Não foi possível identificar alimentos.");
+
+        boolean result = mealHandler.registrarRefeicao(user, "algo inválido", null, 9, 100L, sender);
+
+        assertFalse(result);
+        verify(sender).enviarMensagemMarkdown(eq(100L), contains("Não foi possível identificar alimentos"));
     }
 }

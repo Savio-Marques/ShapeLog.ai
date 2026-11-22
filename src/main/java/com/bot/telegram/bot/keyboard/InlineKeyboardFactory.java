@@ -81,6 +81,10 @@ public class InlineKeyboardFactory {
         return markup(List.of(new InlineKeyboardRow(button("✖️ Cancelar", "cancel_state"))));
     }
 
+    public InlineKeyboardMarkup criarBotaoSairModoTreino() {
+        return markup(List.of(new InlineKeyboardRow(button("✖️ Sair do modo treino", "cancel_state"))));
+    }
+
     public InlineKeyboardMarkup criarBotoesConflitoTreino(String token) {
         return markup(List.of(
                 new InlineKeyboardRow(button("✏️ Renomear treino atual", "wk_rename:" + token)),
@@ -97,7 +101,7 @@ public class InlineKeyboardFactory {
         String payload = String.format("confirm_goal:%d:%d:%d:%d", cal, prot, carb, fat);
         return markup(List.of(new InlineKeyboardRow(
                 button("✅ Aplicar metas", payload),
-                button("✖️ Cancelar", "cancel_state")
+                button("✖️ Cancelar", "cancel_goal")
         )));
     }
 

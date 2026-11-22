@@ -24,9 +24,11 @@ public class StateManager {
     private static final Logger log = LoggerFactory.getLogger(StateManager.class);
     private static final long STATE_TTL_MS = 15 * 60 * 1000L;
 
+    record ScopedPendingInput(long chatId, PendingInput input) {}
+
     private final Map<Long, String> userStates = new ConcurrentHashMap<>();
     private final Map<Long, Long> userStateTimes = new ConcurrentHashMap<>();
-    private final Map<Long, PendingInput> pendingInputs = new ConcurrentHashMap<>();
+    private final Map<String, ScopedPendingInput> pendingInputs = new ConcurrentHashMap<>();
 
     private final UserStateRepository userStateRepository;
     private final PendingInputRepository pendingInputRepository;
@@ -91,31 +93,29 @@ public class StateManager {
 
     @Transactional
     public String putPendingInput(long chatId, String text, byte[] audioBytes, Integer userMessageId) {
-        String token = UUID.randomUUID().toString().substring(0, 8);
+        String token = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         Instant now = Instant.now();
-        if (pendingInputRepository != null) {
-            if (audioBytes != null && audioBytes.length > 0) {
-                pendingInputRepository.findById(chatId).ifPresent(pendingInputRepository::delete);
-                pendingInputs.put(chatId, new PendingInput(token, text, audioBytes, userMessageId, now.toEpochMilli()));
-            } else {
-                pendingInputs.remove(chatId);
-                pendingInputRepository.save(PendingInputEntity.builder()
-                        .chatId(chatId)
-                        .token(token)
-                        .textContent(text)
-                        .userMessageId(userMessageId)
-                        .createdAt(now)
-                        .expiresAt(now.plusMillis(STATE_TTL_MS))
-                        .build());
-            }
+        if (pendingInputRepository != null && (audioBytes == null || audioBytes.length == 0)) {
+            pendingInputRepository.save(PendingInputEntity.builder()
+                    .token(token)
+                    .chatId(chatId)
+                    .textContent(text)
+                    .userMessageId(userMessageId)
+                    .createdAt(now)
+                    .expiresAt(now.plusMillis(STATE_TTL_MS))
+                    .build());
             return token;
         }
-        pendingInputs.put(chatId, new PendingInput(token, text, audioBytes, userMessageId, now.toEpochMilli()));
+        PendingInput entry = new PendingInput(token, text, audioBytes, userMessageId, now.toEpochMilli());
+        pendingInputs.put(token, new ScopedPendingInput(chatId, entry));
         return token;
     }
 
     @Transactional
     public PendingInput consumePendingInput(long chatId, String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
         PendingInput memoryResult = consumeInMemoryPendingInput(chatId, token);
         if (memoryResult != null) {
             return memoryResult;
@@ -123,7 +123,7 @@ public class StateManager {
         if (pendingInputRepository == null) {
             return null;
         }
-        Optional<PendingInputEntity> opt = pendingInputRepository.findById(chatId);
+        Optional<PendingInputEntity> opt = pendingInputRepository.findByTokenAndChatId(token, chatId);
         if (opt.isEmpty()) {
             return null;
         }
@@ -132,34 +132,28 @@ public class StateManager {
             pendingInputRepository.delete(entity);
             return null;
         }
-        if (token != null && token.equals(entity.getToken())) {
-            pendingInputRepository.delete(entity);
-            return new PendingInput(
-                    entity.getToken(),
-                    entity.getTextContent(),
-                    null,
-                    entity.getUserMessageId(),
-                    entity.getCreatedAt().toEpochMilli()
-            );
-        }
-        return null;
+        pendingInputRepository.delete(entity);
+        return new PendingInput(
+                entity.getToken(),
+                entity.getTextContent(),
+                null,
+                entity.getUserMessageId(),
+                entity.getCreatedAt().toEpochMilli()
+        );
     }
 
     private PendingInput consumeInMemoryPendingInput(long chatId, String token) {
         AtomicReference<PendingInput> consumed = new AtomicReference<>();
         long now = System.currentTimeMillis();
-        pendingInputs.compute(chatId, (id, entry) -> {
-            if (entry == null) {
+        pendingInputs.computeIfPresent(token, (t, scoped) -> {
+            if ((now - scoped.input().createdAt()) > STATE_TTL_MS) {
                 return null;
             }
-            if ((now - entry.createdAt()) > STATE_TTL_MS) {
+            if (scoped.chatId() == chatId) {
+                consumed.set(scoped.input());
                 return null;
             }
-            if (token != null && token.equals(entry.token())) {
-                consumed.set(entry);
-                return null;
-            }
-            return entry;
+            return scoped;
         });
         return consumed.get();
     }
@@ -177,9 +171,9 @@ public class StateManager {
             return expirou;
         });
         pendingInputs.entrySet().removeIf(entry -> {
-            boolean expirou = (agora - entry.getValue().createdAt()) > STATE_TTL_MS;
+            boolean expirou = (agora - entry.getValue().input().createdAt()) > STATE_TTL_MS;
             if (expirou) {
-                log.debug("Entrada pendente expirada removida para chatId={}", entry.getKey());
+                log.debug("Entrada pendente expirada removida para token={}", entry.getKey());
             }
             return expirou;
         });
