@@ -91,7 +91,7 @@ class MealHandlerTest {
         verify(sender).deletarMensagem(100L, 10);
         verify(sender).enviarMensagemMarkdown(
                 eq(100L),
-                argThat(msg -> msg.contains("200 kcal") && msg.contains("800 / 2000 kcal")),
+                argThat(msg -> msg.contains("200 kcal") && msg.contains("800 / 2.000 kcal")),
                 any(InlineKeyboardMarkup.class)
         );
         verify(mealService).saveBotMessageId(1L, 20);
@@ -134,9 +134,13 @@ class MealHandlerTest {
         verify(sender).editarMensagemBot(
                 eq(100L),
                 eq(20),
-                argThat(msg -> msg.contains("300 kcal") && msg.contains("900 / 2000 kcal")),
+                argThat(msg -> msg.contains("300 kcal") && msg.contains("900 / 2.000 kcal") && msg.contains("editada")),
                 any(InlineKeyboardMarkup.class)
         );
-        verify(sender).enviarMensagem(eq(100L), contains("atualizada"));
+        verify(sender).enviarMensagemMarkdown(
+                eq(100L),
+                contains("Refeição atualizada"),
+                any(InlineKeyboardMarkup.class)
+        );
     }
 }

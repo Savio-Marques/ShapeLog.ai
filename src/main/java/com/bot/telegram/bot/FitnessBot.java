@@ -19,6 +19,7 @@ import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.Voice;
@@ -87,22 +88,14 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
     }
 
     private void notificarAcessoNegadoEAdmin(UserTelegram user, Long chatId) {
-        enviarMensagem(chatId, "⛔ Acesso restrito. Solicite permissão ao administrador para utilizar o bot.");
+        enviarMensagemMarkdown(chatId, messageFormatter.formatAccessDenied());
 
         if (adminId != null && adminId > 0 && !adminId.equals(chatId)
                 && shouldNotifyAdmin(chatId, System.currentTimeMillis())) {
-            String username = user.getUsername() != null ? messageFormatter.escapeMarkdown(user.getUsername()) : "sem username";
-            String firstName = user.getFirstName() != null ? messageFormatter.escapeMarkdown(user.getFirstName()) : "sem nome";
-
-            String notifMsg = String.format(
-                    "🔔 *Solicitação de Acesso*\n\n" +
-                    "👤 *Nome:* %s\n" +
-                    "🏷️ *Username:* @%s\n" +
-                    "🆔 *ID:* `%d`\n\n" +
-                    "Para aprovar, envie:\n`/aprovar %d`",
-                    firstName, username, chatId, chatId
+            enviarMensagemMarkdown(
+                    adminId,
+                    messageFormatter.formatAccessRequestForAdmin(user.getFirstName(), user.getUsername(), chatId)
             );
-            enviarMensagemMarkdown(adminId, notifMsg);
         }
     }
 
@@ -174,21 +167,25 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
             if (update.hasCallbackQuery() && update.getCallbackQuery().getMessage() != null) {
                 meterRegistry.counter("shapelog.bot.updates", "type", "callback").increment();
                 chatId = update.getCallbackQuery().getMessage().getChatId();
+                String cbId = update.getCallbackQuery().getId();
                 UserTelegram user = userService.getOrCreateUser(
                         chatId,
                         update.getCallbackQuery().getFrom().getUserName(),
                         update.getCallbackQuery().getFrom().getFirstName()
                 );
                 if (!isUserAllowed(user, chatId)) {
-                    responderCallback(update.getCallbackQuery().getId());
+                    responderCallback(cbId, null);
                     notificarAcessoNegadoEAdmin(user, chatId);
                     return;
                 }
                 int botMessageId = update.getCallbackQuery().getMessage().getMessageId();
-                String data      = update.getCallbackQuery().getData();
-                String cbId      = update.getCallbackQuery().getId();
-                responderCallback(cbId);
-                commandRouter.rotearCallback(user, data, botMessageId, chatId, this);
+                String data = update.getCallbackQuery().getData();
+                CallbackScopedSender scopedSender = new CallbackScopedSender(cbId);
+                try {
+                    commandRouter.rotearCallback(user, data, botMessageId, chatId, scopedSender);
+                } finally {
+                    scopedSender.ensureAnswered();
+                }
                 return;
             }
             if (update.hasMessage()) {
@@ -216,12 +213,12 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
                     Voice voice = update.getMessage().getVoice();
                     if ((voice.getDuration() != null && voice.getDuration() > MAX_VOICE_DURATION_SECONDS)
                             || (voice.getFileSize() != null && voice.getFileSize() > MAX_VOICE_FILE_SIZE_BYTES)) {
-                        enviarMensagem(chatId, "⚠️ Áudio muito longo ou grande (máximo de 2 minutos / 2 MB). Envie um áudio mais curto ou descreva em texto.");
+                        enviarMensagemMarkdown(chatId, messageFormatter.formatVoiceTooLarge());
                         return;
                     }
                     byte[] audioBytes = obterBytesDoAudio(voice.getFileId());
                     if (audioBytes == null) {
-                        enviarMensagem(chatId, "Não foi possível baixar o áudio. Tente reenviar ou descreva em texto.");
+                        enviarMensagemMarkdown(chatId, messageFormatter.formatVoiceDownloadError());
                         return;
                     }
                     commandRouter.rotearEstadoVoz(user, audioBytes, chatId, this);
@@ -234,7 +231,10 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
             log.error("Erro inesperado ao processar update do chatId={}", chatId, e);
             if (chatId != null) {
                 String errMsg = resolverMensagemDeErro(e);
-                enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro inesperado. Tente novamente em instantes.");
+                enviarMensagemMarkdown(
+                        chatId,
+                        errMsg != null ? messageFormatter.formatWarning(errMsg) : messageFormatter.formatUnexpectedError()
+                );
             }
         } finally {
             sample.stop(meterRegistry.timer("shapelog.bot.update.duration"));
@@ -333,6 +333,24 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
     }
 
     @Override
+    public void editarTecladoBot(long chatId, int messageId, InlineKeyboardMarkup keyboard) {
+        EditMessageReplyMarkup edit = EditMessageReplyMarkup.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .replyMarkup(keyboard)
+                .build();
+        try {
+            telegramClient.execute(edit);
+        } catch (TelegramApiException e) {
+            if (e.getMessage() != null && e.getMessage().contains("message is not modified")) {
+                log.debug("Teclado da mensagem id={} no chatId={} não foi modificado.", messageId, chatId);
+                return;
+            }
+            log.warn("Falha ao editar teclado da mensagem id={} no chatId={}: {}", messageId, chatId, e.getMessage());
+        }
+    }
+
+    @Override
     public String resolverMensagemDeErro(Exception e) {
         Throwable cause = e;
         while (cause != null) {
@@ -359,14 +377,51 @@ public class FitnessBot implements LongPollingUpdateConsumer, BotActionSender {
         return null;
     }
 
-    private void responderCallback(String callbackQueryId) {
-        AnswerCallbackQuery answer = AnswerCallbackQuery.builder()
-                .callbackQueryId(callbackQueryId)
-                .build();
+    void responderCallback(String callbackQueryId, String text) {
+        AnswerCallbackQuery.AnswerCallbackQueryBuilder<?, ?> builder = AnswerCallbackQuery.builder()
+                .callbackQueryId(callbackQueryId);
+        if (text != null && !text.isBlank()) {
+            String trimmed = text.trim();
+            builder.text(trimmed.length() > 200 ? trimmed.substring(0, 199) + "…" : trimmed);
+        }
         try {
-            telegramClient.execute(answer);
+            telegramClient.execute(builder.build());
         } catch (TelegramApiException e) {
             log.warn("Falha ao confirmar callback id={}: {}", callbackQueryId, e.getMessage());
+        }
+    }
+
+    /**
+     * Garante que cada CallbackQuery receba exatamente uma resposta (toast ou fallback vazio).
+     */
+    private final class CallbackScopedSender implements BotActionSender {
+        private final String callbackQueryId;
+        private final AtomicBoolean answered = new AtomicBoolean(false);
+
+        private CallbackScopedSender(String callbackQueryId) {
+            this.callbackQueryId = callbackQueryId;
+        }
+
+        @Override public void enviarMensagem(long chatId, String texto) { FitnessBot.this.enviarMensagem(chatId, texto); }
+        @Override public Message enviarMensagemRetornando(long chatId, String texto) { return FitnessBot.this.enviarMensagemRetornando(chatId, texto); }
+        @Override public void deletarMensagem(long chatId, int messageId) { FitnessBot.this.deletarMensagem(chatId, messageId); }
+        @Override public Message enviarMensagemMarkdown(long chatId, String texto) { return FitnessBot.this.enviarMensagemMarkdown(chatId, texto); }
+        @Override public Message enviarMensagemMarkdown(long chatId, String texto, InlineKeyboardMarkup keyboard) { return FitnessBot.this.enviarMensagemMarkdown(chatId, texto, keyboard); }
+        @Override public void editarMensagemBot(long chatId, int messageId, String novoTexto, InlineKeyboardMarkup keyboard) { FitnessBot.this.editarMensagemBot(chatId, messageId, novoTexto, keyboard); }
+        @Override public void editarTecladoBot(long chatId, int messageId, InlineKeyboardMarkup keyboard) { FitnessBot.this.editarTecladoBot(chatId, messageId, keyboard); }
+        @Override public String resolverMensagemDeErro(Exception e) { return FitnessBot.this.resolverMensagemDeErro(e); }
+
+        @Override
+        public void responderToast(String texto) {
+            if (answered.compareAndSet(false, true)) {
+                responderCallback(callbackQueryId, texto);
+            }
+        }
+
+        void ensureAnswered() {
+            if (answered.compareAndSet(false, true)) {
+                responderCallback(callbackQueryId, null);
+            }
         }
     }
 }

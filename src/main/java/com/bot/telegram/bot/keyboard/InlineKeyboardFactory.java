@@ -16,9 +16,14 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Constrói os teclados inline do ShapeLog.ai respeitando limites de largura mobile
+ * e confirmação em dois passos para exclusões.
+ */
 @Component
 public class InlineKeyboardFactory {
 
+    static final int MAX_DYNAMIC_LABEL_LENGTH = 22;
     private static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final ZoneId appZoneId;
@@ -32,15 +37,34 @@ public class InlineKeyboardFactory {
         this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
+    public InlineKeyboardMarkup criarBotoesStart() {
+        return markup(List.of(
+                new InlineKeyboardRow(button("🎯 Minhas metas", "open_goals")),
+                new InlineKeyboardRow(button("📊 Relatório de hoje", "open_report:today"))
+        ));
+    }
+
     public InlineKeyboardMarkup criarBotoesRefeicao(Long mealId, LocalDate date) {
         LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
         return markup(List.of(
                 new InlineKeyboardRow(
                         button("✏️ Editar", "edit_meal:" + mealId),
-                        button("❌ Excluir", "delete_meal:" + mealId)
+                        button("🗑️ Excluir", "delete_meal:" + mealId)
                 ),
-                new InlineKeyboardRow(button("📊 Ver Relatório", "open_report:" + safeDate))
+                new InlineKeyboardRow(button("📊 Ver relatório", "open_report:" + safeDate))
         ));
+    }
+
+    public InlineKeyboardMarkup criarBotoesConfirmarExclusaoRefeicao(Long mealId) {
+        return markup(List.of(new InlineKeyboardRow(
+                button("🗑️ Sim, excluir", "cfm_del_meal:" + mealId),
+                button("✖️ Voltar", "cnl_del_meal:" + mealId)
+        )));
+    }
+
+    public InlineKeyboardMarkup criarBotaoVerRelatorio(LocalDate date) {
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
+        return markup(List.of(new InlineKeyboardRow(button("📊 Ver relatório", "open_report:" + safeDate))));
     }
 
     public InlineKeyboardMarkup criarBotoesConfirmacaoEntrada(String token) {
@@ -72,15 +96,20 @@ public class InlineKeyboardFactory {
         int fat = dto.getFat() != null ? dto.getFat() : 0;
         String payload = String.format("confirm_goal:%d:%d:%d:%d", cal, prot, carb, fat);
         return markup(List.of(new InlineKeyboardRow(
-                button("✅ Aplicar Metas", payload),
+                button("✅ Aplicar metas", payload),
                 button("✖️ Cancelar", "cancel_state")
         )));
     }
 
     public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, List<WorkoutDto.ExerciseDto> exercises) {
+        return criarBotoesExercicios(workoutId, exercises, LocalDate.now(appZoneId));
+    }
+
+    public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, List<WorkoutDto.ExerciseDto> exercises, LocalDate date) {
         if (exercises == null || exercises.isEmpty()) {
             return null;
         }
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
         List<InlineKeyboardRow> rows = new ArrayList<>();
         int count = exercises.size();
 
@@ -91,10 +120,18 @@ public class InlineKeyboardFactory {
 
             rows.add(new InlineKeyboardRow(
                     button("✏️ Editar" + suffix, "edit_ex:" + workoutId + ":" + ref),
-                    button("❌ Excluir" + suffix, "delete_ex:" + workoutId + ":" + ref)
+                    button("🗑️ Excluir" + suffix, "delete_ex:" + workoutId + ":" + ref)
             ));
         }
+        rows.add(new InlineKeyboardRow(button("📊 Ver relatório", "open_report:" + safeDate)));
         return markup(rows);
+    }
+
+    public InlineKeyboardMarkup criarBotoesConfirmarExclusaoExercicio(Long workoutId, String exerciseRef) {
+        return markup(List.of(new InlineKeyboardRow(
+                button("🗑️ Sim, excluir", "cfm_del_ex:" + workoutId + ":" + exerciseRef),
+                button("✖️ Voltar", "cnl_del_ex:" + workoutId + ":" + exerciseRef)
+        )));
     }
 
     public InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report, LocalDate date) {
@@ -102,16 +139,16 @@ public class InlineKeyboardFactory {
         List<InlineKeyboardRow> rows = new ArrayList<>();
 
         InlineKeyboardRow navRow = new InlineKeyboardRow();
-        navRow.add(button("⬅️ Dia Anterior", "rep_nav:" + safeDate.minusDays(1)));
+        navRow.add(button("⬅️ Anterior", "rep_nav:" + safeDate.minusDays(1)));
         if (safeDate.isBefore(LocalDate.now(appZoneId))) {
-            navRow.add(button("Dia Seguinte ➡️", "rep_nav:" + safeDate.plusDays(1)));
+            navRow.add(button("Próximo ➡️", "rep_nav:" + safeDate.plusDays(1)));
         }
         rows.add(navRow);
 
         boolean hasMeals = report != null && report.getMeals() != null && !report.getMeals().isEmpty();
         boolean hasWorkouts = report != null && report.getWorkouts() != null && !report.getWorkouts().isEmpty();
         if (hasMeals || hasWorkouts) {
-            rows.add(new InlineKeyboardRow(button("🗑️ Gerenciar / Excluir Itens", "rep_manage:" + safeDate)));
+            rows.add(new InlineKeyboardRow(button("🗑️ Gerenciar itens", "rep_manage:" + safeDate)));
         }
 
         return markup(rows);
@@ -124,7 +161,7 @@ public class InlineKeyboardFactory {
         List<Meal> meals = (report != null && report.getMeals() != null) ? report.getMeals() : List.of();
         int idx = 1;
         for (Meal meal : meals) {
-            rows.add(new InlineKeyboardRow(button("❌ Excluir Refeição " + idx, "del_rep_m:" + meal.getId())));
+            rows.add(new InlineKeyboardRow(button("🗑️ Refeição " + idx, "ask_del_rep_m:" + meal.getId())));
             idx++;
         }
 
@@ -133,16 +170,34 @@ public class InlineKeyboardFactory {
         for (WorkoutSession workout : workouts) {
             String raw = workout.getRawInput();
             String titulo = (raw != null && !raw.isBlank() && !raw.startsWith("[")) ? raw.trim() : "Treino";
-            String label = workouts.size() > 1
-                    ? "❌ Excluir " + titulo + " (" + workoutIdx + ")"
-                    : "❌ Excluir " + titulo;
-            rows.add(new InlineKeyboardRow(button(label, "del_rep_w:" + workout.getId())));
+            String baseLabel = workouts.size() > 1 ? titulo + " (" + workoutIdx + ")" : titulo;
+            String label = "🗑️ " + truncateLabel(baseLabel, MAX_DYNAMIC_LABEL_LENGTH);
+            rows.add(new InlineKeyboardRow(button(label, "ask_del_rep_w:" + workout.getId())));
             workoutIdx++;
         }
 
-        rows.add(new InlineKeyboardRow(button("⬅️ Voltar ao Relatório", "rep_view:" + safeDate)));
+        rows.add(new InlineKeyboardRow(button("⬅️ Voltar", "rep_view:" + safeDate)));
 
         return markup(rows);
+    }
+
+    public InlineKeyboardMarkup criarBotoesConfirmarExclusaoRelatorio(String confirmCallbackData, LocalDate date) {
+        LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
+        return markup(List.of(new InlineKeyboardRow(
+                button("🗑️ Sim, excluir", confirmCallbackData),
+                button("✖️ Voltar", "rep_manage:" + safeDate)
+        )));
+    }
+
+    String truncateLabel(String text, int maxLen) {
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.trim();
+        if (trimmed.length() <= maxLen || maxLen < 2) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLen - 1).trim() + "…";
     }
 
     private InlineKeyboardMarkup markup(List<InlineKeyboardRow> rows) {

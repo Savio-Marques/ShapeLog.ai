@@ -48,7 +48,7 @@ public class ReportHandler {
                 } else {
                     date = parseDate(arg);
                     if (date == null) {
-                        sender.enviarMensagem(chatId, "⚠️ Formato de data inválido! Use /relatorio, /relatorio ontem, ou /relatorio DD/MM/AAAA.");
+                        sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidDateFormat());
                         return;
                     }
                 }
@@ -57,7 +57,8 @@ public class ReportHandler {
         } catch (Exception e) {
             log.error("Erro ao gerar relatório para chatId={}", chatId, e);
             String errMsg = sender.resolverMensagemDeErro(e);
-            sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao gerar o relatório.");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
+                    errMsg != null ? errMsg : "Ocorreu um erro ao gerar o relatório."));
         }
     }
 
@@ -68,7 +69,8 @@ public class ReportHandler {
         } catch (Exception e) {
             log.error("Erro ao abrir relatório de {} para chatId={}", date, chatId, e);
             String errMsg = sender.resolverMensagemDeErro(e);
-            sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao gerar o relatório.");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
+                    errMsg != null ? errMsg : "Ocorreu um erro ao gerar o relatório."));
         }
     }
 
@@ -95,7 +97,7 @@ public class ReportHandler {
             sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatDailyReport(report, date), markup);
         } catch (Exception e) {
             log.error("Erro ao atualizar relatório após exclusão para chatId={}", chatId, e);
-            sender.enviarMensagem(chatId, "Item excluído, mas ocorreu um erro ao recarregar o relatório.");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning("Item excluído, mas ocorreu um erro ao recarregar o relatório."));
         }
     }
 
@@ -108,7 +110,7 @@ public class ReportHandler {
             sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatDailyReport(report, date), markup);
         } catch (Exception e) {
             log.error("Erro ao atualizar relatório de {} para chatId={}", date, chatId, e);
-            sender.enviarMensagem(chatId, fallbackError);
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(fallbackError));
         }
     }
 
@@ -120,7 +122,7 @@ public class ReportHandler {
                 String fullDate = input + "/" + LocalDate.now(appZoneId).getYear();
                 return LocalDate.parse(fullDate, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
             }
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
         return null;
     }

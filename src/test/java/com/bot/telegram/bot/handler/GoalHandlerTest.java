@@ -64,21 +64,22 @@ class GoalHandlerTest {
 
         verify(userService, never()).updateGoals(any(), anyInt(), anyInt(), anyInt(), anyInt());
         verify(sender).deletarMensagem(100L, 42);
-        verify(sender).enviarMensagemMarkdown(eq(100L), contains("2200 kcal"), any(InlineKeyboardMarkup.class));
+        verify(sender).enviarMensagemMarkdown(eq(100L), contains("2.200 kcal"), any(InlineKeyboardMarkup.class));
     }
 
     @Test
-    void confirmarMetasSugeridas_deveSalvarNoBancoEAtualizarMensagem() {
+    void confirmarMetasSugeridas_deveSalvarNoBancoEAtualizarMensagemEToast() {
         goalHandler.confirmarMetasSugeridas(user, 2200, 170, 225, 68, 77, 100L, sender);
 
         verify(userService).updateGoals(user, 2200, 170, 225, 68);
-        verify(sender).editarMensagemBot(eq(100L), eq(77), contains("2200 kcal"), isNull());
+        verify(sender).responderToast("Metas atualizadas!");
+        verify(sender).editarMensagemBot(eq(100L), eq(77), contains("2.200 kcal"), isNull());
     }
 
     @Test
     void salvarMetasDiretas_comValorZero_deveRejeitarSemSalvar() {
         goalHandler.salvarMetasDiretas(user, 0, 150, 200, 60, 100L, sender);
         verify(userService, never()).updateGoals(any(), anyInt(), anyInt(), anyInt(), anyInt());
-        verify(sender).enviarMensagem(eq(100L), contains("maiores que zero"));
+        verify(sender).enviarMensagemMarkdown(eq(100L), contains("maiores que zero"));
     }
 }

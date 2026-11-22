@@ -8,9 +8,12 @@ import com.bot.telegram.service.UserService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.slf4j.MDC;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
+import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.api.objects.Voice;
@@ -51,6 +54,7 @@ class FitnessBotTest {
         ReflectionTestUtils.setField(bot, "adminId", 999999L);
         doNothing().when(bot).enviarMensagem(anyLong(), anyString());
         doReturn(null).when(bot).enviarMensagemMarkdown(anyLong(), anyString());
+        doReturn(null).when(bot).enviarMensagemMarkdown(anyLong(), anyString(), any());
         return bot;
     }
 
@@ -65,6 +69,32 @@ class FitnessBotTest {
 
     private Update buildTextUpdate(long chatId, String text) {
         return buildMessageUpdate(chatId, text, null);
+    }
+
+    private Update buildCallbackUpdate(long chatId, String callbackId, String data) {
+        User from = User.builder()
+                .id(chatId)
+                .userName("user" + chatId)
+                .firstName("User " + chatId)
+                .isBot(false)
+                .build();
+
+        Chat chat = Chat.builder().id(chatId).type("private").build();
+        Message message = new Message();
+        message.setMessageId(55);
+        message.setChat(chat);
+        message.setFrom(from);
+
+        CallbackQuery cb = new CallbackQuery();
+        cb.setId(callbackId);
+        cb.setData(data);
+        cb.setFrom(from);
+        cb.setMessage(message);
+
+        Update update = new Update();
+        update.setUpdateId(88);
+        update.setCallbackQuery(cb);
+        return update;
     }
 
     private Update buildMessageUpdate(long chatId, String text, Voice voice) {
@@ -106,7 +136,7 @@ class FitnessBotTest {
         bot.consume(buildVoiceUpdate(100L, 121, 500_000L));
         bot.consume(buildVoiceUpdate(100L, 30, 3_000_000L));
 
-        verify(bot, times(2)).enviarMensagem(eq(100L), contains("Áudio muito longo ou grande"));
+        verify(bot, times(2)).enviarMensagemMarkdown(eq(100L), contains("Áudio muito longo ou grande"));
         verify(bot, never()).obterBytesDoAudio(anyString());
         verifyNoInteractions(commandRouter);
     }
@@ -125,9 +155,43 @@ class FitnessBotTest {
         bot.consume(buildTextUpdate(111L, "oi 1"));
         bot.consume(buildTextUpdate(111L, "oi 2"));
 
-        verify(bot, times(2)).enviarMensagem(eq(111L), contains("Acesso restrito"));
-        verify(bot, times(1)).enviarMensagemMarkdown(eq(999999L), contains("Solicitação de Acesso"));
+        verify(bot, times(2)).enviarMensagemMarkdown(eq(111L), contains("Acesso restrito"));
+        verify(bot, times(1)).enviarMensagemMarkdown(eq(999999L), contains("Solicitação de acesso"));
         verifyNoInteractions(commandRouter);
+    }
+
+    @Test
+    void processUpdate_callbackComESemToast_deveResponderAnswerCallbackQueryExatamenteUmaVez() throws Exception {
+        FitnessBot bot = createSpyBot(Runnable::run);
+        UserTelegram approved = UserTelegram.builder().id(100L).firstName("Sávio").approved(true).build();
+        when(userService.getOrCreateUser(eq(100L), anyString(), anyString())).thenReturn(approved);
+        when(telegramClient.execute(any(AnswerCallbackQuery.class))).thenReturn(true);
+
+        doAnswer(inv -> {
+            BotActionSender scoped = inv.getArgument(4);
+            scoped.responderToast("Confirme a exclusão abaixo");
+            scoped.responderToast("Segunda tentativa ignorada");
+            return null;
+        }).when(commandRouter).rotearCallback(eq(approved), eq("delete_meal:1"), eq(55), eq(100L), any());
+
+        bot.processUpdate(buildCallbackUpdate(100L, "cb-1", "delete_meal:1"));
+
+        ArgumentCaptor<AnswerCallbackQuery> captor = ArgumentCaptor.forClass(AnswerCallbackQuery.class);
+        verify(telegramClient, times(1)).execute(captor.capture());
+        assertEquals("cb-1", captor.getValue().getCallbackQueryId());
+        assertEquals("Confirme a exclusão abaixo", captor.getValue().getText());
+
+        // Callback em que roteador não envia toast explícito deve ainda receber fallback vazio no finally
+        reset(telegramClient);
+        when(telegramClient.execute(any(AnswerCallbackQuery.class))).thenReturn(true);
+        doNothing().when(commandRouter).rotearCallback(eq(approved), eq("qualquer"), eq(55), eq(100L), any());
+
+        bot.processUpdate(buildCallbackUpdate(100L, "cb-2", "qualquer"));
+
+        ArgumentCaptor<AnswerCallbackQuery> fallbackCaptor = ArgumentCaptor.forClass(AnswerCallbackQuery.class);
+        verify(telegramClient, times(1)).execute(fallbackCaptor.capture());
+        assertEquals("cb-2", fallbackCaptor.getValue().getCallbackQueryId());
+        assertNull(fallbackCaptor.getValue().getText());
     }
 
     @Test

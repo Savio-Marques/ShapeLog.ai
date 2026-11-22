@@ -40,7 +40,7 @@ public class GoalHandler {
 
     public void salvarMetasDiretas(UserTelegram user, int cal, int prot, int carb, int fat, long chatId, BotActionSender sender) {
         if (cal <= 0 || prot <= 0 || carb <= 0 || fat <= 0) {
-            sender.enviarMensagem(chatId, "⚠️ Os valores das metas devem ser números maiores que zero!\n\n💡 Exemplo: /meta 2000 150 200 60");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalValues());
             return;
         }
         userService.updateGoals(user, cal, prot, carb, fat);
@@ -48,7 +48,7 @@ public class GoalHandler {
     }
 
     public void sugerirMetasPorIA(UserTelegram user, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
-        Message tempMsg = sender.enviarMensagemRetornando(chatId, "Calculando metas... ⏳");
+        Message tempMsg = sender.enviarMensagemRetornando(chatId, messageFormatter.formatLoading("Calculando metas"));
         try {
             int curCal = (user != null && user.getTargetCalories() != null && user.getTargetCalories() > 0) ? user.getTargetCalories() : DEFAULT_CALORIES;
             int curProt = (user != null && user.getTargetProtein() != null && user.getTargetProtein() > 0) ? user.getTargetProtein() : DEFAULT_PROTEIN;
@@ -63,26 +63,31 @@ public class GoalHandler {
                 throw new IllegalArgumentException("Não foi possível calcular metas válidas. Informe seu peso, objetivo ou os valores desejados!");
             }
 
-            if (tempMsg != null) {
-                sender.deletarMensagem(chatId, tempMsg.getMessageId());
-            }
+            deleteTemp(sender, chatId, tempMsg);
             sender.enviarMensagemMarkdown(chatId, messageFormatter.formatGoalSuggestion(dto), keyboardFactory.criarBotoesConfirmacaoMeta(dto));
         } catch (Exception e) {
             log.error("Erro ao calcular sugestão de metas para chatId={}", chatId, e);
-            if (tempMsg != null) {
-                sender.deletarMensagem(chatId, tempMsg.getMessageId());
-            }
+            deleteTemp(sender, chatId, tempMsg);
             String errMsg = sender.resolverMensagemDeErro(e);
-            sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Não foi possível calcular as metas no momento. Tente informar os 4 números (ex: /meta 2000 150 200 60).");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatWarning(
+                    errMsg != null ? errMsg : "Não foi possível calcular as metas no momento. Tente informar os 4 números (ex: /meta 2000 150 200 60)."));
         }
     }
 
     public void confirmarMetasSugeridas(UserTelegram user, int cal, int prot, int carb, int fat, int botMessageId, long chatId, BotActionSender sender) {
         if (cal <= 0 || prot <= 0 || carb <= 0 || fat <= 0) {
-            sender.enviarMensagem(chatId, "⚠️ Valores de metas inválidos.");
+            sender.responderToast("Valores inválidos");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalValues());
             return;
         }
         userService.updateGoals(user, cal, prot, carb, fat);
+        sender.responderToast("Metas atualizadas!");
         sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatGoalsUpdated(cal, prot, carb, fat), null);
+    }
+
+    private void deleteTemp(BotActionSender sender, long chatId, Message tempMsg) {
+        if (tempMsg != null) {
+            sender.deletarMensagem(chatId, tempMsg.getMessageId());
+        }
     }
 }

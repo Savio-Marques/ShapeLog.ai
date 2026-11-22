@@ -10,5 +10,7 @@ public interface BotActionSender {
     Message enviarMensagemMarkdown(long chatId, String texto);
     Message enviarMensagemMarkdown(long chatId, String texto, InlineKeyboardMarkup keyboard);
     void editarMensagemBot(long chatId, int messageId, String novoTexto, InlineKeyboardMarkup keyboard);
+    default void editarTecladoBot(long chatId, int messageId, InlineKeyboardMarkup keyboard) {}
+    default void responderToast(String texto) {}
     String resolverMensagemDeErro(Exception e);
 }

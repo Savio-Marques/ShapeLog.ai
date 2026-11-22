@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Arrays;
@@ -26,6 +27,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
+/**
+ * Roteia comandos, mensagens livres por estado e callbacks inline do Telegram.
+ */
 @Component
 public class CommandRouter {
 
@@ -87,14 +91,16 @@ public class CommandRouter {
         String argumento = tokens.length > 1 ? tokens[1].trim() : "";
 
         switch (comando) {
-            case "/start" ->
-                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatStart(user.getFirstName()));
-            case "/meta" ->
-                rotearMeta(user, argumento, chatId, sender);
+            case "/start" -> sender.enviarMensagemMarkdown(
+                    chatId,
+                    messageFormatter.formatStart(user.getFirstName()),
+                    keyboardFactory.criarBotoesStart()
+            );
+            case "/meta" -> rotearMeta(user, argumento, chatId, sender);
             case "/refeicao" -> {
                 if (argumento.isEmpty()) {
                     stateManager.putState(chatId, UserState.AWAITING_MEAL.serialize());
-                    sender.enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto sua refeição agora!");
+                    sender.enviarMensagemMarkdown(chatId, messageFormatter.formatAwaitingMealPrompt());
                 } else {
                     mealHandler.registrarRefeicao(user, argumento, null, userMessageId, chatId, sender);
                 }
@@ -102,7 +108,7 @@ public class CommandRouter {
             case "/treino" -> {
                 if (argumento.isEmpty()) {
                     stateManager.putState(chatId, UserState.AWAITING_WORKOUT_TITLE.serialize());
-                    sender.enviarMensagem(chatId, "💪 Qual o título do seu treino hoje? (Ex: Costas e Bíceps, Treino A)");
+                    sender.enviarMensagemMarkdown(chatId, messageFormatter.formatAwaitingWorkoutTitlePrompt());
                 } else if (looksLikeExerciseInput(argumento)) {
                     workoutHandler.registrarExercicioOuCriarTreino(user, argumento, null, userMessageId, chatId, sender);
                 } else {
@@ -112,22 +118,287 @@ public class CommandRouter {
             case "/exercicio" -> {
                 if (argumento.isEmpty()) {
                     stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
-                    sender.enviarMensagem(chatId, "🎙️ Envie um áudio ou descreva em texto o exercício agora!");
+                    sender.enviarMensagemMarkdown(chatId, messageFormatter.formatAwaitingExercisePrompt());
                 } else {
                     workoutHandler.registrarExercicioOuCriarTreino(user, argumento, null, userMessageId, chatId, sender);
                 }
             }
-            case "/relatorio" ->
-                reportHandler.gerarRelatorio(user, argumento, chatId, sender);
-            case "/aprovar" ->
-                rotearAprovar(chatId, trimmed, sender);
-            case "/revogar" ->
-                rotearRevogar(chatId, trimmed, sender);
-            case "/usuarios" ->
-                rotearListarUsuarios(chatId, sender);
-            default ->
-                sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
+            case "/relatorio" -> reportHandler.gerarRelatorio(user, argumento, chatId, sender);
+            case "/aprovar" -> rotearAprovar(chatId, trimmed, sender);
+            case "/revogar" -> rotearRevogar(chatId, trimmed, sender);
+            case "/usuarios" -> rotearListarUsuarios(chatId, sender);
+            default -> sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnknownCommand());
         }
+    }
+
+    public void rotearEstadoTexto(UserTelegram user, String text, int userMessageId, long chatId, BotActionSender sender) {
+        String rawState = stateManager.getState(chatId);
+        UserState state = UserState.from(rawState);
+        if (state == null) {
+            String token = stateManager.putPendingInput(chatId, text, null, userMessageId);
+            sender.enviarMensagemMarkdown(
+                    chatId,
+                    messageFormatter.formatPendingInputPrompt(text, false),
+                    keyboardFactory.criarBotoesConfirmacaoEntrada(token)
+            );
+            return;
+        }
+        stateManager.removeState(chatId);
+        switch (state) {
+            case AWAITING_MEAL -> mealHandler.registrarRefeicao(user, text, null, userMessageId, chatId, sender);
+            case AWAITING_WORKOUT_TITLE -> iniciarOuConfirmarTituloTreino(user, text, userMessageId, chatId, sender);
+            case AWAITING_EXERCISE -> workoutHandler.registrarExercicioOuCriarTreino(user, text, null, userMessageId, chatId, sender);
+            case AWAITING_EDIT_MEAL -> mealHandler.atualizarRefeicaoEditada(user, UserState.extractId(rawState), text, null, chatId, sender);
+            case AWAITING_EDIT_EXERCISE -> processarEdicaoExercicio(rawState, text, null, chatId, sender);
+            case AWAITING_GOAL -> processarEntradaMeta(user, text, chatId, sender);
+            default -> sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnknownState());
+        }
+    }
+
+    public void rotearEstadoVoz(UserTelegram user, byte[] audioBytes, long chatId, BotActionSender sender) {
+        String rawState = stateManager.getState(chatId);
+        UserState state = UserState.from(rawState);
+        if (state == null) {
+            String token = stateManager.putPendingInput(chatId, null, audioBytes, null);
+            sender.enviarMensagemMarkdown(
+                    chatId,
+                    messageFormatter.formatPendingInputPrompt(null, true),
+                    keyboardFactory.criarBotoesConfirmacaoEntrada(token)
+            );
+            return;
+        }
+        stateManager.removeState(chatId);
+        switch (state) {
+            case AWAITING_MEAL -> mealHandler.registrarRefeicao(user, null, audioBytes, null, chatId, sender);
+            case AWAITING_WORKOUT_TITLE -> {
+                stateManager.putState(chatId, UserState.AWAITING_WORKOUT_TITLE.serialize());
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatVoiceWorkoutTitleRequired());
+            }
+            case AWAITING_EXERCISE -> workoutHandler.registrarExercicioOuCriarTreino(user, null, audioBytes, null, chatId, sender);
+            case AWAITING_EDIT_MEAL -> mealHandler.atualizarRefeicaoEditada(user, UserState.extractId(rawState), null, audioBytes, chatId, sender);
+            case AWAITING_EDIT_EXERCISE -> processarEdicaoExercicio(rawState, null, audioBytes, chatId, sender);
+            case AWAITING_GOAL -> goalHandler.sugerirMetasPorIA(user, null, audioBytes, chatId, sender);
+            default -> sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnknownState());
+        }
+    }
+
+    public void rotearCallback(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
+        try {
+            if (data.startsWith("pending_") || data.startsWith("wk_") || "cancel_state".equals(data)) {
+                rotearCallbackPendenteOuEstado(user, data, botMessageId, chatId, sender);
+            } else if ("open_goals".equals(data) || data.startsWith("confirm_goal:")
+                    || data.startsWith("open_report:") || data.startsWith("rep_")) {
+                rotearCallbackMetaOuRelatorio(user, data, botMessageId, chatId, sender);
+            } else if (data.startsWith("delete_meal:") || data.startsWith("cfm_del_meal:") || data.startsWith("cnl_del_meal:")
+                    || data.startsWith("edit_meal:") || data.startsWith("ask_del_rep_m:") || data.startsWith("del_rep_m:")) {
+                rotearCallbackRefeicao(user, data, botMessageId, chatId, sender);
+            } else if (data.startsWith("delete_workout:") || data.startsWith("edit_ex:")
+                    || data.startsWith("delete_ex:") || data.startsWith("cfm_del_ex:") || data.startsWith("cnl_del_ex:")
+                    || data.startsWith("ask_del_rep_w:") || data.startsWith("del_rep_w:")) {
+                rotearCallbackTreino(user, data, botMessageId, chatId, sender);
+            }
+        } catch (Exception e) {
+            log.error("Erro ao processar callback data='{}' para chatId={}", data, chatId, e);
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnexpectedError());
+        }
+    }
+
+    private void rotearCallbackRefeicao(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
+        Long mealId = Long.parseLong(data.split(":")[1]);
+        Meal meal = findOwnedMeal(mealId, chatId);
+        if (meal == null) {
+            return;
+        }
+        LocalDate mealDate = toLocalDate(meal.getCreatedAt());
+        if (data.startsWith("edit_meal:")) {
+            stateManager.putState(chatId, UserState.AWAITING_EDIT_MEAL.withId(mealId));
+            sender.responderToast("Envie a correção");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatEditMealPrompt(), keyboardFactory.criarBotaoCancelarEstado());
+        } else if (data.startsWith("delete_meal:")) {
+            sender.editarTecladoBot(chatId, botMessageId, keyboardFactory.criarBotoesConfirmarExclusaoRefeicao(mealId));
+            sender.responderToast("Confirme a exclusão abaixo");
+        } else if (data.startsWith("cfm_del_meal:")) {
+            sender.responderToast("Refeição excluída");
+            mealHandler.processarExclusaoRefeicao(mealId, botMessageId, chatId, sender);
+        } else if (data.startsWith("cnl_del_meal:")) {
+            sender.editarTecladoBot(chatId, botMessageId, keyboardFactory.criarBotoesRefeicao(mealId, mealDate));
+            sender.responderToast("Exclusão cancelada");
+        } else if (data.startsWith("ask_del_rep_m:")) {
+            sender.editarTecladoBot(chatId, botMessageId,
+                    keyboardFactory.criarBotoesConfirmarExclusaoRelatorio("del_rep_m:" + mealId, mealDate));
+            sender.responderToast("Confirme a exclusão abaixo");
+        } else if (data.startsWith("del_rep_m:")) {
+            mealService.deleteMeal(mealId);
+            sender.responderToast("Refeição excluída");
+            reportHandler.atualizarRelatorioAposExclusao(user, mealDate, botMessageId, chatId, sender);
+        }
+    }
+
+    private void rotearCallbackTreino(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
+        if (data.startsWith("delete_workout:") || data.startsWith("ask_del_rep_w:") || data.startsWith("del_rep_w:")) {
+            Long workoutId = Long.parseLong(data.split(":")[1]);
+            WorkoutSession ws = findOwnedWorkout(workoutId, chatId);
+            if (ws == null) {
+                return;
+            }
+            LocalDate workoutDate = toLocalDate(ws.getCreatedAt());
+            if (data.startsWith("delete_workout:")) {
+                sender.responderToast("Treino excluído");
+                workoutHandler.processarExclusaoTreino(workoutId, botMessageId, chatId, sender);
+            } else if (data.startsWith("ask_del_rep_w:")) {
+                sender.editarTecladoBot(chatId, botMessageId,
+                        keyboardFactory.criarBotoesConfirmarExclusaoRelatorio("del_rep_w:" + workoutId, workoutDate));
+                sender.responderToast("Confirme a exclusão abaixo");
+            } else {
+                workoutService.deleteWorkout(workoutId);
+                sender.responderToast("Treino excluído");
+                reportHandler.atualizarRelatorioAposExclusao(user, workoutDate, botMessageId, chatId, sender);
+            }
+            return;
+        }
+
+        String[] parts = data.split(":");
+        if (parts.length < 3) {
+            log.error("Callback de exercício malformado: '{}'", data);
+            return;
+        }
+        Long workoutId = Long.parseLong(parts[1]);
+        String exerciseRef = parts[2];
+        WorkoutSession ws = findOwnedWorkout(workoutId, chatId);
+        if (ws == null) {
+            return;
+        }
+        if (data.startsWith("edit_ex:")) {
+            stateManager.putState(chatId, UserState.AWAITING_EDIT_EXERCISE.withPayload(workoutId + ":" + exerciseRef + ":" + botMessageId));
+            sender.responderToast("Envie o novo exercício");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatEditExercisePrompt(), keyboardFactory.criarBotaoCancelarEstado());
+        } else if (data.startsWith("delete_ex:")) {
+            sender.editarTecladoBot(chatId, botMessageId, keyboardFactory.criarBotoesConfirmarExclusaoExercicio(workoutId, exerciseRef));
+            sender.responderToast("Confirme a exclusão abaixo");
+        } else if (data.startsWith("cfm_del_ex:")) {
+            sender.responderToast("Exercício excluído");
+            workoutHandler.processarExclusaoExercicio(workoutId, exerciseRef, botMessageId, chatId, sender);
+        } else if (data.startsWith("cnl_del_ex:")) {
+            LocalDate workoutDate = toLocalDate(ws.getCreatedAt());
+            List<WorkoutDto.ExerciseDto> allEx = workoutService.deserializeExercises(ws.getExercisesJson());
+            int idx = workoutService.findExerciseIndex(allEx, exerciseRef);
+            WorkoutDto.ExerciseDto restored = (idx >= 0 && idx < allEx.size())
+                    ? allEx.get(idx)
+                    : WorkoutDto.ExerciseDto.builder().id(exerciseRef).build();
+            sender.editarTecladoBot(chatId, botMessageId,
+                    keyboardFactory.criarBotoesExercicios(workoutId, List.of(restored), workoutDate));
+            sender.responderToast("Exclusão cancelada");
+        }
+    }
+
+    private void rotearCallbackPendenteOuEstado(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
+        if ("cancel_state".equals(data)) {
+            stateManager.removeState(chatId);
+            sender.responderToast("Operação cancelada");
+            sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatActionCancelled(), null);
+            return;
+        }
+        if (data.startsWith("pending_meal:")) {
+            PendingInput pending = consumeOrNotifyExpired(chatId, botMessageId, data.substring("pending_meal:".length()),
+                    "Envie sua refeição novamente.", sender);
+            if (pending == null) return;
+            sender.responderToast("⏳ Analisando...");
+            sender.deletarMensagem(chatId, botMessageId);
+            mealHandler.registrarRefeicao(user, pending.text(), pending.audioBytes(), pending.userMessageId(), chatId, sender);
+        } else if (data.startsWith("pending_exercise:")) {
+            PendingInput pending = consumeOrNotifyExpired(chatId, botMessageId, data.substring("pending_exercise:".length()),
+                    "Envie seu exercício novamente.", sender);
+            if (pending == null) return;
+            sender.responderToast("⏳ Analisando...");
+            sender.deletarMensagem(chatId, botMessageId);
+            workoutHandler.registrarExercicioOuCriarTreino(user, pending.text(), pending.audioBytes(), pending.userMessageId(), chatId, sender);
+        } else if (data.startsWith("pending_cancel:")) {
+            stateManager.consumePendingInput(chatId, data.substring("pending_cancel:".length()));
+            sender.responderToast("Operação cancelada");
+            sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatActionCancelled(), null);
+        } else if (data.startsWith("wk_rename:")) {
+            PendingInput pending = consumeOrNotifyExpired(chatId, botMessageId, data.substring("wk_rename:".length()),
+                    "Envie /treino novamente.", sender);
+            if (pending == null) return;
+            sender.responderToast("Treino renomeado");
+            sender.deletarMensagem(chatId, botMessageId);
+            workoutHandler.criarRascunho(user, pending.text(), pending.userMessageId(), chatId, sender);
+            stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
+        } else if (data.startsWith("wk_new:")) {
+            PendingInput pending = consumeOrNotifyExpired(chatId, botMessageId, data.substring("wk_new:".length()),
+                    "Envie /treino novamente.", sender);
+            if (pending == null) return;
+            sender.responderToast("Novo treino criado");
+            sender.deletarMensagem(chatId, botMessageId);
+            workoutHandler.criarNovoTreino(user, pending.text(), pending.userMessageId(), chatId, sender);
+            stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
+        }
+    }
+
+    private void rotearCallbackMetaOuRelatorio(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
+        if ("open_goals".equals(data)) {
+            stateManager.putState(chatId, UserState.AWAITING_GOAL.serialize());
+            sender.responderToast("Suas metas");
+            goalHandler.mostrarMetasAtuais(user, chatId, sender);
+        } else if (data.startsWith("confirm_goal:")) {
+            String[] parts = data.split(":");
+            if (parts.length < 5) {
+                log.error("Callback confirm_goal malformado: '{}'", data);
+                return;
+            }
+            int cal = Integer.parseInt(parts[1]);
+            int prot = Integer.parseInt(parts[2]);
+            int carb = Integer.parseInt(parts[3]);
+            int fat = Integer.parseInt(parts[4]);
+            stateManager.removeState(chatId);
+            goalHandler.confirmarMetasSugeridas(user, cal, prot, carb, fat, botMessageId, chatId, sender);
+        } else if (data.startsWith("open_report:")) {
+            String raw = data.substring("open_report:".length());
+            LocalDate date = "today".equals(raw) ? LocalDate.now(appZoneId) : LocalDate.parse(raw);
+            sender.responderToast("Abrindo relatório");
+            reportHandler.abrirRelatorioPorData(user, date, chatId, sender);
+        } else if (data.startsWith("rep_nav:")) {
+            LocalDate date = LocalDate.parse(data.substring("rep_nav:".length()));
+            sender.responderToast("Relatório atualizado");
+            reportHandler.navegarRelatorio(user, date, botMessageId, chatId, sender);
+        } else if (data.startsWith("rep_manage:")) {
+            LocalDate date = LocalDate.parse(data.substring("rep_manage:".length()));
+            sender.responderToast("Selecione o item");
+            reportHandler.abrirModoGerenciar(user, date, botMessageId, chatId, sender);
+        } else if (data.startsWith("rep_view:")) {
+            LocalDate date = LocalDate.parse(data.substring("rep_view:".length()));
+            sender.responderToast("Relatório atualizado");
+            reportHandler.voltarModoVisualizacao(user, date, botMessageId, chatId, sender);
+        }
+    }
+
+    private PendingInput consumeOrNotifyExpired(long chatId, int botMessageId, String token, String retryHint, BotActionSender sender) {
+        PendingInput pending = stateManager.consumePendingInput(chatId, token);
+        if (pending == null) {
+            sender.responderToast("Solicitação expirada");
+            sender.editarMensagemBot(chatId, botMessageId, messageFormatter.formatInputExpired(retryHint), null);
+        }
+        return pending;
+    }
+
+    private Meal findOwnedMeal(Long mealId, long chatId) {
+        Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
+        if (meal == null) {
+            log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
+        }
+        return meal;
+    }
+
+    private WorkoutSession findOwnedWorkout(Long workoutId, long chatId) {
+        WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
+        if (ws == null) {
+            log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
+        }
+        return ws;
+    }
+
+    private LocalDate toLocalDate(Instant instant) {
+        return instant != null ? instant.atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
     }
 
     private void iniciarOuConfirmarTituloTreino(UserTelegram user, String titulo, Integer userMessageId, long chatId, BotActionSender sender) {
@@ -156,149 +427,6 @@ public class CommandRouter {
         return input != null && EXERCISE_INPUT_PATTERN.matcher(input).matches();
     }
 
-    private void rotearAprovar(long chatId, String text, BotActionSender sender) {
-        if (!isAdmin(chatId)) {
-            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
-            return;
-        }
-        String[] parts = text.split("\\s+");
-        if (parts.length < 2) {
-            sender.enviarMensagem(chatId, "⚠️ Uso incorreto! Use: /aprovar <ID_DO_USUARIO>");
-            return;
-        }
-        try {
-            Long targetId = Long.parseLong(parts[1]);
-            Optional<UserTelegram> optUser = userService.approveUser(targetId);
-            if (optUser.isPresent()) {
-                UserTelegram u = optUser.get();
-                String name = u.getFirstName() != null ? messageFormatter.escapeMarkdown(u.getFirstName()) : "Usuário";
-                sender.enviarMensagemMarkdown(chatId, String.format("✅ *Usuário Aprovado\\!*\n\n👤 *Nome:* %s\n🆔 *ID:* `%d`", name, u.getId()));
-                sender.enviarMensagemMarkdown(targetId, "🎉 *Acesso Aprovado\\!*\n\nSeu acesso ao *ShapeLog\\.ai* foi liberado pelo administrador\\! Envie /start para ver os comandos disponíveis\\.");
-            } else {
-                sender.enviarMensagem(chatId, "⚠️ Usuário não encontrado no banco de dados com o ID fornecido.");
-            }
-        } catch (NumberFormatException e) {
-            sender.enviarMensagem(chatId, "⚠️ ID inválido! O ID deve ser um número.");
-        }
-    }
-
-    private void rotearRevogar(long chatId, String text, BotActionSender sender) {
-        if (!isAdmin(chatId)) {
-            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
-            return;
-        }
-        String[] parts = text.split("\\s+");
-        if (parts.length < 2) {
-            sender.enviarMensagem(chatId, "⚠️ Uso incorreto! Use: /revogar <ID_DO_USUARIO>");
-            return;
-        }
-        try {
-            Long targetId = Long.parseLong(parts[1]);
-            Optional<UserTelegram> optUser = userService.revokeUser(targetId);
-            if (optUser.isPresent()) {
-                UserTelegram u = optUser.get();
-                String name = u.getFirstName() != null ? messageFormatter.escapeMarkdown(u.getFirstName()) : "Usuário";
-                sender.enviarMensagemMarkdown(chatId, String.format("❌ *Acesso Revogado\\!*\n\n👤 *Nome:* %s\n🆔 *ID:* `%d`", name, u.getId()));
-            } else {
-                sender.enviarMensagem(chatId, "⚠️ Usuário não encontrado no banco de dados.");
-            }
-        } catch (NumberFormatException e) {
-            sender.enviarMensagem(chatId, "⚠️ ID inválido! O ID deve ser um número.");
-        }
-    }
-
-    private void rotearListarUsuarios(long chatId, BotActionSender sender) {
-        if (!isAdmin(chatId)) {
-            sender.enviarMensagem(chatId, "Comando não reconhecido. Use /refeicao, /treino, /exercicio, /meta ou /relatorio.");
-            return;
-        }
-        List<UserTelegram> approvedUsers = userService.listApprovedUsers();
-        if (approvedUsers.isEmpty()) {
-            sender.enviarMensagem(chatId, "Nenhum usuário aprovado no momento.");
-            return;
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("📋 *Usuários Aprovados:*\n\n");
-        for (UserTelegram u : approvedUsers) {
-            String name = u.getFirstName() != null ? messageFormatter.escapeMarkdown(u.getFirstName()) : "Sem nome";
-            String uname = u.getUsername() != null ? "@" + messageFormatter.escapeMarkdown(u.getUsername()) : "";
-            sb.append(String.format("• %s %s \\(ID: `%d`\\)\n", name, uname, u.getId()));
-        }
-        sender.enviarMensagemMarkdown(chatId, sb.toString().trim());
-    }
-
-    private boolean isAdmin(long chatId) {
-        return adminId != null && adminId > 0 && adminId.equals(chatId);
-    }
-
-    public void rotearEstadoTexto(UserTelegram user, String text, int userMessageId, long chatId, BotActionSender sender) {
-        String rawState = stateManager.getState(chatId);
-        UserState state = UserState.from(rawState);
-        if (state == null) {
-            String token = stateManager.putPendingInput(chatId, text, null, userMessageId);
-            sender.enviarMensagemMarkdown(
-                    chatId,
-                    messageFormatter.formatPendingInputPrompt(text, false),
-                    keyboardFactory.criarBotoesConfirmacaoEntrada(token)
-            );
-            return;
-        }
-        stateManager.removeState(chatId);
-        switch (state) {
-            case AWAITING_MEAL ->
-                mealHandler.registrarRefeicao(user, text, null, userMessageId, chatId, sender);
-            case AWAITING_WORKOUT_TITLE ->
-                iniciarOuConfirmarTituloTreino(user, text, userMessageId, chatId, sender);
-            case AWAITING_EXERCISE ->
-                workoutHandler.registrarExercicioOuCriarTreino(user, text, null, userMessageId, chatId, sender);
-            case AWAITING_EDIT_MEAL -> {
-                Long mealId = UserState.extractId(rawState);
-                mealHandler.atualizarRefeicaoEditada(user, mealId, text, null, chatId, sender);
-            }
-            case AWAITING_EDIT_EXERCISE ->
-                processarEdicaoExercicio(rawState, text, null, chatId, sender);
-            case AWAITING_GOAL ->
-                processarEntradaMeta(user, text, chatId, sender);
-            default ->
-                sender.enviarMensagem(chatId, "Estado não reconhecido. Envie um comando para continuar.");
-        }
-    }
-
-    public void rotearEstadoVoz(UserTelegram user, byte[] audioBytes, long chatId, BotActionSender sender) {
-        String rawState = stateManager.getState(chatId);
-        UserState state = UserState.from(rawState);
-        if (state == null) {
-            String token = stateManager.putPendingInput(chatId, null, audioBytes, null);
-            sender.enviarMensagemMarkdown(
-                    chatId,
-                    messageFormatter.formatPendingInputPrompt(null, true),
-                    keyboardFactory.criarBotoesConfirmacaoEntrada(token)
-            );
-            return;
-        }
-        stateManager.removeState(chatId);
-        switch (state) {
-            case AWAITING_MEAL ->
-                mealHandler.registrarRefeicao(user, null, audioBytes, null, chatId, sender);
-            case AWAITING_WORKOUT_TITLE -> {
-                stateManager.putState(chatId, UserState.AWAITING_WORKOUT_TITLE.serialize());
-                sender.enviarMensagem(chatId, "⚠️ Por favor, digite o título do treino em texto primeiro!");
-            }
-            case AWAITING_EXERCISE ->
-                workoutHandler.registrarExercicioOuCriarTreino(user, null, audioBytes, null, chatId, sender);
-            case AWAITING_EDIT_MEAL -> {
-                Long mealId = UserState.extractId(rawState);
-                mealHandler.atualizarRefeicaoEditada(user, mealId, null, audioBytes, chatId, sender);
-            }
-            case AWAITING_EDIT_EXERCISE ->
-                processarEdicaoExercicio(rawState, null, audioBytes, chatId, sender);
-            case AWAITING_GOAL ->
-                goalHandler.sugerirMetasPorIA(user, null, audioBytes, chatId, sender);
-            default ->
-                sender.enviarMensagem(chatId, "Estado não reconhecido. Envie um comando para continuar.");
-        }
-    }
-
     private void processarEdicaoExercicio(String rawState, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
         String payload = UserState.extractPayload(rawState);
         if (payload != null && payload.contains(":")) {
@@ -307,174 +435,6 @@ public class CommandRouter {
             String exerciseId = parts[1];
             Integer originalBotMsgId = parts.length >= 3 ? Integer.parseInt(parts[2]) : null;
             workoutHandler.atualizarExercicioEditado(workoutId, exerciseId, originalBotMsgId, text, audioBytes, chatId, sender);
-        }
-    }
-
-    public void rotearCallback(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
-        try {
-            if (data.startsWith("pending_") || data.startsWith("wk_") || "cancel_state".equals(data)) {
-                rotearCallbackPendenteOuEstado(user, data, botMessageId, chatId, sender);
-            } else if (data.startsWith("confirm_goal:") || data.startsWith("open_report:") || data.startsWith("rep_")) {
-                rotearCallbackMetaOuRelatorio(user, data, botMessageId, chatId, sender);
-            } else if (data.startsWith("delete_meal:")) {
-                Long mealId = Long.parseLong(data.split(":")[1]);
-                Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
-                if (meal == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
-                    return;
-                }
-                mealHandler.processarExclusaoRefeicao(mealId, botMessageId, chatId, sender);
-            } else if (data.startsWith("delete_workout:")) {
-                Long workoutId = Long.parseLong(data.split(":")[1]);
-                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
-                if (ws == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
-                    return;
-                }
-                workoutHandler.processarExclusaoTreino(workoutId, botMessageId, chatId, sender);
-            } else if (data.startsWith("edit_meal:")) {
-                Long mealId = Long.parseLong(data.split(":")[1]);
-                Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
-                if (meal == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
-                    return;
-                }
-                stateManager.putState(chatId, UserState.AWAITING_EDIT_MEAL.withId(mealId));
-                sender.enviarMensagemMarkdown(
-                        chatId,
-                        "✏️ *Editando refeição:* diga o que deseja corrigir \\(ex: _'foram 150g de arroz'_ ou _'troca o queijo por 2 ovos'_\\), ou descreva a refeição novamente\\.",
-                        keyboardFactory.criarBotaoCancelarEstado()
-                );
-            } else if (data.startsWith("edit_ex:")) {
-                String[] parts = data.split(":");
-                if (parts.length < 3) { log.error("Callback edit_ex malformado: '{}'", data); return; }
-                Long workoutId = Long.parseLong(parts[1]);
-                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
-                if (ws == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
-                    return;
-                }
-                String exerciseId = parts[2];
-                stateManager.putState(chatId, UserState.AWAITING_EDIT_EXERCISE.withPayload(workoutId + ":" + exerciseId + ":" + botMessageId));
-                sender.enviarMensagemMarkdown(
-                        chatId,
-                        "✏️ *Editando exercício:* envie um texto ou grave um áudio com o novo conteúdo para este exercício\\.",
-                        keyboardFactory.criarBotaoCancelarEstado()
-                );
-            } else if (data.startsWith("delete_ex:")) {
-                String[] parts = data.split(":");
-                if (parts.length < 3) { log.error("Callback delete_ex malformado: '{}'", data); return; }
-                Long workoutId = Long.parseLong(parts[1]);
-                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
-                if (ws == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
-                    return;
-                }
-                String exerciseId = parts[2];
-                workoutHandler.processarExclusaoExercicio(workoutId, exerciseId, botMessageId, chatId, sender);
-            } else if (data.startsWith("del_rep_m:")) {
-                Long mealId = Long.parseLong(data.split(":")[1]);
-                Meal meal = mealService.findByIdAndUserId(mealId, chatId).orElse(null);
-                if (meal == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} mealId={}", chatId, mealId);
-                    return;
-                }
-                LocalDate date = meal.getCreatedAt() != null ? meal.getCreatedAt().atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
-                mealService.deleteMeal(mealId);
-                reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
-            } else if (data.startsWith("del_rep_w:")) {
-                Long workoutId = Long.parseLong(data.split(":")[1]);
-                WorkoutSession ws = workoutService.findByIdAndUserId(workoutId, chatId).orElse(null);
-                if (ws == null) {
-                    log.warn("SEC-04: tentativa de acesso não autorizado. chatId={} workoutId={}", chatId, workoutId);
-                    return;
-                }
-                LocalDate date = ws.getCreatedAt() != null ? ws.getCreatedAt().atZone(appZoneId).toLocalDate() : LocalDate.now(appZoneId);
-                workoutService.deleteWorkout(workoutId);
-                reportHandler.atualizarRelatorioAposExclusao(user, date, botMessageId, chatId, sender);
-            }
-        } catch (Exception e) {
-            log.error("Erro ao processar callback data='{}' para chatId={}", data, chatId, e);
-            sender.enviarMensagem(chatId, "Ocorreu um erro ao processar sua solicitação.");
-        }
-    }
-
-    private void rotearCallbackPendenteOuEstado(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
-        if ("cancel_state".equals(data)) {
-            stateManager.removeState(chatId);
-            sender.editarMensagemBot(chatId, botMessageId, "✖️ Operação cancelada\\.", null);
-            return;
-        }
-        if (data.startsWith("pending_meal:")) {
-            String token = data.substring("pending_meal:".length());
-            PendingInput pending = stateManager.consumePendingInput(chatId, token);
-            if (pending == null) {
-                sender.editarMensagemBot(chatId, botMessageId, "⚠️ Esta entrada expirou ou já foi processada\\. Envie novamente\\.", null);
-                return;
-            }
-            sender.deletarMensagem(chatId, botMessageId);
-            mealHandler.registrarRefeicao(user, pending.text(), pending.audioBytes(), pending.userMessageId(), chatId, sender);
-        } else if (data.startsWith("pending_exercise:")) {
-            String token = data.substring("pending_exercise:".length());
-            PendingInput pending = stateManager.consumePendingInput(chatId, token);
-            if (pending == null) {
-                sender.editarMensagemBot(chatId, botMessageId, "⚠️ Esta entrada expirou ou já foi processada\\. Envie novamente\\.", null);
-                return;
-            }
-            sender.deletarMensagem(chatId, botMessageId);
-            workoutHandler.registrarExercicioOuCriarTreino(user, pending.text(), pending.audioBytes(), pending.userMessageId(), chatId, sender);
-        } else if (data.startsWith("pending_cancel:")) {
-            String token = data.substring("pending_cancel:".length());
-            stateManager.consumePendingInput(chatId, token);
-            sender.editarMensagemBot(chatId, botMessageId, "✖️ Ação cancelada\\.", null);
-        } else if (data.startsWith("wk_rename:")) {
-            String token = data.substring("wk_rename:".length());
-            PendingInput pending = stateManager.consumePendingInput(chatId, token);
-            if (pending == null) {
-                sender.editarMensagemBot(chatId, botMessageId, "⚠️ Esta solicitação expirou\\. Envie /treino novamente\\.", null);
-                return;
-            }
-            sender.deletarMensagem(chatId, botMessageId);
-            workoutHandler.criarRascunho(user, pending.text(), pending.userMessageId(), chatId, sender);
-            stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
-        } else if (data.startsWith("wk_new:")) {
-            String token = data.substring("wk_new:".length());
-            PendingInput pending = stateManager.consumePendingInput(chatId, token);
-            if (pending == null) {
-                sender.editarMensagemBot(chatId, botMessageId, "⚠️ Esta solicitação expirou\\. Envie /treino novamente\\.", null);
-                return;
-            }
-            sender.deletarMensagem(chatId, botMessageId);
-            workoutHandler.criarNovoTreino(user, pending.text(), pending.userMessageId(), chatId, sender);
-            stateManager.putState(chatId, UserState.AWAITING_EXERCISE.serialize());
-        }
-    }
-
-    private void rotearCallbackMetaOuRelatorio(UserTelegram user, String data, int botMessageId, long chatId, BotActionSender sender) {
-        if (data.startsWith("confirm_goal:")) {
-            String[] parts = data.split(":");
-            if (parts.length < 5) {
-                log.error("Callback confirm_goal malformado: '{}'", data);
-                return;
-            }
-            int cal = Integer.parseInt(parts[1]);
-            int prot = Integer.parseInt(parts[2]);
-            int carb = Integer.parseInt(parts[3]);
-            int fat = Integer.parseInt(parts[4]);
-            stateManager.removeState(chatId);
-            goalHandler.confirmarMetasSugeridas(user, cal, prot, carb, fat, botMessageId, chatId, sender);
-        } else if (data.startsWith("open_report:")) {
-            LocalDate date = LocalDate.parse(data.substring("open_report:".length()));
-            reportHandler.abrirRelatorioPorData(user, date, chatId, sender);
-        } else if (data.startsWith("rep_nav:")) {
-            LocalDate date = LocalDate.parse(data.substring("rep_nav:".length()));
-            reportHandler.navegarRelatorio(user, date, botMessageId, chatId, sender);
-        } else if (data.startsWith("rep_manage:")) {
-            LocalDate date = LocalDate.parse(data.substring("rep_manage:".length()));
-            reportHandler.abrirModoGerenciar(user, date, botMessageId, chatId, sender);
-        } else if (data.startsWith("rep_view:")) {
-            LocalDate date = LocalDate.parse(data.substring("rep_view:".length()));
-            reportHandler.voltarModoVisualizacao(user, date, botMessageId, chatId, sender);
         }
     }
 
@@ -490,14 +450,14 @@ public class CommandRouter {
     private void processarEntradaMeta(UserTelegram user, String input, long chatId, BotActionSender sender) {
         String trimmed = input != null ? input.trim() : "";
         if (trimmed.isEmpty()) {
-            sender.enviarMensagem(chatId, "⚠️ Informe os 4 valores ou descreva seu objetivo.");
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalMissingInput());
             return;
         }
         String[] partes = trimmed.split("\\s+");
         boolean allNumbers = Arrays.stream(partes).allMatch(p -> p.matches("-?\\d+"));
         if (allNumbers) {
             if (partes.length != 4) {
-                sender.enviarMensagem(chatId, "⚠️ Formato incorreto! Use assim:\n/meta <calorias> <proteínas> <carbos> <gorduras>\n\n💡 Exemplo: /meta 2000 150 200 60\nOu descreva seu objetivo em texto (ex: /meta peso 80kg quero secar).");
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalFormat());
                 return;
             }
             try {
@@ -506,15 +466,76 @@ public class CommandRouter {
                 int carb = Integer.parseInt(partes[2]);
                 int fat  = Integer.parseInt(partes[3]);
                 if (cal <= 0 || prot <= 0 || carb <= 0 || fat <= 0) {
-                    sender.enviarMensagem(chatId, "⚠️ Os valores das metas devem ser números maiores que zero!\n\n💡 Exemplo: /meta 2000 150 200 60");
+                    sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalValues());
                     return;
                 }
                 goalHandler.salvarMetasDiretas(user, cal, prot, carb, fat, chatId, sender);
             } catch (NumberFormatException e) {
-                sender.enviarMensagem(chatId, "Erro: Os valores das metas devem ser números inteiros!");
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidGoalValues());
             }
             return;
         }
         goalHandler.sugerirMetasPorIA(user, trimmed, null, chatId, sender);
+    }
+
+    private void rotearAprovar(long chatId, String text, BotActionSender sender) {
+        if (!isAdmin(chatId)) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnknownCommand());
+            return;
+        }
+        String[] parts = text.split("\\s+");
+        if (parts.length < 2) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatAdminUsageError("/aprovar <ID_DO_USUARIO>"));
+            return;
+        }
+        try {
+            Long targetId = Long.parseLong(parts[1]);
+            Optional<UserTelegram> optUser = userService.approveUser(targetId);
+            if (optUser.isPresent()) {
+                UserTelegram u = optUser.get();
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUserApprovedForAdmin(u.getFirstName(), u.getId()));
+                sender.enviarMensagemMarkdown(targetId, messageFormatter.formatUserApprovedForUser());
+            } else {
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUserNotFound());
+            }
+        } catch (NumberFormatException e) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidNumericId());
+        }
+    }
+
+    private void rotearRevogar(long chatId, String text, BotActionSender sender) {
+        if (!isAdmin(chatId)) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnknownCommand());
+            return;
+        }
+        String[] parts = text.split("\\s+");
+        if (parts.length < 2) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatAdminUsageError("/revogar <ID_DO_USUARIO>"));
+            return;
+        }
+        try {
+            Long targetId = Long.parseLong(parts[1]);
+            Optional<UserTelegram> optUser = userService.revokeUser(targetId);
+            if (optUser.isPresent()) {
+                UserTelegram u = optUser.get();
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUserRevokedForAdmin(u.getFirstName(), u.getId()));
+            } else {
+                sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUserNotFound());
+            }
+        } catch (NumberFormatException e) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatInvalidNumericId());
+        }
+    }
+
+    private void rotearListarUsuarios(long chatId, BotActionSender sender) {
+        if (!isAdmin(chatId)) {
+            sender.enviarMensagemMarkdown(chatId, messageFormatter.formatUnknownCommand());
+            return;
+        }
+        sender.enviarMensagemMarkdown(chatId, messageFormatter.formatApprovedUsersList(userService.listApprovedUsers()));
+    }
+
+    private boolean isAdmin(long chatId) {
+        return adminId != null && adminId > 0 && adminId.equals(chatId);
     }
 }
