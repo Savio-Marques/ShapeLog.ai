@@ -164,14 +164,6 @@ public class StateManager {
         return consumed.get();
     }
 
-    @Transactional
-    public void removePendingInput(long chatId) {
-        pendingInputs.remove(chatId);
-        if (pendingInputRepository != null) {
-            pendingInputRepository.findById(chatId).ifPresent(pendingInputRepository::delete);
-        }
-    }
-
     @Scheduled(fixedRate = 600000)
     @Transactional
     public void limparEstadosExpirados() {

@@ -54,8 +54,4 @@ public class ReportService {
                 .user(user)
                 .build();
     }
-
-    public DailyReportDto getDailyReport(UserTelegram user) {
-        return getReportForDate(user, LocalDate.now(appZoneId));
-    }
 }

@@ -58,24 +58,6 @@ public class WorkoutHandler {
         }
     }
 
-    public void registrarExercicio(Long workoutId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
-        Message tempMsg = sender.enviarMensagemRetornando(chatId, "Analisando exercício... ⏳");
-        try {
-            WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesToDraft(workoutId, text, audioBytes, null);
-            if (tempMsg != null) {
-                sender.deletarMensagem(chatId, tempMsg.getMessageId());
-            }
-            enviarCardsExercicios(result, chatId, sender);
-        } catch (Exception e) {
-            log.error("Erro ao registrar exercício no treino id={} para chatId={}", workoutId, chatId, e);
-            if (tempMsg != null) {
-                sender.deletarMensagem(chatId, tempMsg.getMessageId());
-            }
-            String errMsg = sender.resolverMensagemDeErro(e);
-            sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Ocorreu um erro ao processar o exercício.");
-        }
-    }
-
     public void registrarExercicioOuCriarTreino(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId, long chatId, BotActionSender sender) {
         Message tempMsg = sender.enviarMensagemRetornando(chatId, "Analisando exercício... ⏳");
         try {
@@ -103,14 +85,6 @@ public class WorkoutHandler {
             String formattedText = messageFormatter.formatExercisesAdded(singleList, autoTitle);
             sender.enviarMensagemMarkdown(chatId, formattedText, keyboardFactory.criarBotoesExercicios(result.session.getId(), singleList));
         }
-    }
-
-    public void atualizarExercicioEditado(Long workoutId, int exerciseIndex, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
-        atualizarExercicioEditado(workoutId, String.valueOf(exerciseIndex), null, text, audioBytes, chatId, sender);
-    }
-
-    public void atualizarExercicioEditado(Long workoutId, String exerciseId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
-        atualizarExercicioEditado(workoutId, exerciseId, null, text, audioBytes, chatId, sender);
     }
 
     public void atualizarExercicioEditado(Long workoutId, String exerciseId, Integer botMessageId, String text, byte[] audioBytes, long chatId, BotActionSender sender) {
@@ -143,10 +117,6 @@ public class WorkoutHandler {
             String errMsg = sender.resolverMensagemDeErro(e);
             sender.enviarMensagem(chatId, errMsg != null ? errMsg : "Erro ao atualizar o exercício.");
         }
-    }
-
-    public void processarExclusaoExercicio(Long workoutId, int exerciseIndex, int botMessageId, long chatId, BotActionSender sender) {
-        processarExclusaoExercicio(workoutId, String.valueOf(exerciseIndex), botMessageId, chatId, sender);
     }
 
     public void processarExclusaoExercicio(Long workoutId, String exerciseId, int botMessageId, long chatId, BotActionSender sender) {

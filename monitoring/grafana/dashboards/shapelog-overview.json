@@ -123,7 +123,7 @@
       ]
     },
     {
-      "title": "Chamadas & Erros Gemini por Tipo",
+      "title": "Chamadas, Erros Gemini & Rate Limit",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "targets": [
@@ -136,6 +136,11 @@
           "expr": "shapelog_gemini_errors_total",
           "legendFormat": "Erros ({{type}})",
           "refId": "B"
+        },
+        {
+          "expr": "shapelog_ratelimit_rejected_total",
+          "legendFormat": "Rate Limit Rejeitado",
+          "refId": "C"
         }
       ]
     },

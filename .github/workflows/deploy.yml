@@ -106,5 +106,6 @@ jobs:
               exit 1
             fi
 
+            docker tag saviomarques/shapelog-bot:${{ github.sha }} saviomarques/shapelog-bot:latest
             docker image prune -f
             echo "Deploy concluido com saude! Imagem ativa: saviomarques/shapelog-bot:${{ github.sha }}"

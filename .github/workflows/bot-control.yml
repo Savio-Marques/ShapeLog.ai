@@ -38,7 +38,7 @@ jobs:
 
             if [ "$ACTION" = "start" ]; then
               echo "▶️ Iniciando o bot..."
-              $COMPOSE_CMD up -d shapelog-bot
+              $COMPOSE_CMD start shapelog-bot || $COMPOSE_CMD up -d shapelog-bot
               echo "✅ Bot iniciado com sucesso!"
 
             elif [ "$ACTION" = "stop" ]; then

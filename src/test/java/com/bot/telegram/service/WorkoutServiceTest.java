@@ -86,122 +86,21 @@ class WorkoutServiceTest {
     }
 
     @Test
-    void addExercisesToDraft_exerciciosValidos_deveAdicionarAoJson() {
-        WorkoutSession existente = WorkoutSession.builder()
-                .id(10L)
-                .user(testUser)
-                .rawInput("Treino A")
-                .exercisesJson("[]")
-                .durationMinutes(30)
-                .build();
-
-        when(workoutRepository.findById(10L)).thenReturn(Optional.of(existente));
-        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(10).weight(80.0).build();
-        WorkoutDto.ExerciseDto exercise = WorkoutDto.ExerciseDto.builder().name("Supino Reto").series(List.of(series)).build();
-        WorkoutDto dto = WorkoutDto.builder().durationMinutes(20).exercises(List.of(exercise)).build();
-
-        when(geminiService.parseWorkout(eq("supino 10 reps 80kg"), isNull())).thenReturn(dto);
-
-        WorkoutService.WorkoutUpdateResult result = workoutService.addExercisesToDraft(10L, "supino 10 reps 80kg", null, 201);
-        assertNotNull(result);
-        assertEquals(0, result.startIndex);
-        assertEquals(1, result.addedExercises.size());
-        assertEquals("Supino Reto", result.addedExercises.get(0).getName());
-        assertEquals(50, result.session.getDurationMinutes());
-        assertTrue(result.session.getExercisesJson().contains("Supino Reto"));
-    }
-
-    @Test
-    void addExercisesToDraft_treinoInexistente_deveLancarExcecao() {
-        when(workoutRepository.findById(999L)).thenReturn(Optional.empty());
-
-        assertThrows(IllegalArgumentException.class, () ->
-                workoutService.addExercisesToDraft(999L, "supino 3x10", null, 1));
-    }
-
-    @Test
-    void addExercisesToDraft_semExerciciosRetornados_deveLancarExcecao() {
-        WorkoutSession existente = WorkoutSession.builder().id(10L).user(testUser).exercisesJson("[]").build();
-        when(workoutRepository.findById(10L)).thenReturn(Optional.of(existente));
-
-        WorkoutDto dtoVazio = WorkoutDto.builder().exercises(new ArrayList<>()).build();
-        when(geminiService.parseWorkout(any(), any())).thenReturn(dtoVazio);
-
-        assertThrows(IllegalArgumentException.class, () ->
-                workoutService.addExercisesToDraft(10L, "texto aleatorio", null, 1));
-        verify(workoutRepository, never()).save(any());
-    }
-
-    @Test
-    void editExercise_exercicioValido_deveSubstituirNoIndice() {
-        String jsonOriginal = "[{\"name\":\"Supino Inclinado\",\"series\":[{\"reps\":10,\"weight\":60.0}]}]";
+    void editExerciseById_semExerciciosRetornados_deveLancarExcecao() {
+        String jsonOriginal = "[{\"id\":\"ex-1\",\"name\":\"Supino\",\"series\":[]}]";
         WorkoutSession existente = WorkoutSession.builder()
                 .id(15L)
                 .user(testUser)
                 .exercisesJson(jsonOriginal)
                 .build();
-
-        when(workoutRepository.findById(15L)).thenReturn(Optional.of(existente));
-        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        WorkoutDto.SeriesDto series = WorkoutDto.SeriesDto.builder().reps(12).weight(70.0).build();
-        WorkoutDto.ExerciseDto exercise = WorkoutDto.ExerciseDto.builder().name("Supino Reto").series(List.of(series)).build();
-        WorkoutDto dto = WorkoutDto.builder().exercises(List.of(exercise)).build();
-
-        when(geminiService.parseWorkout(eq("supino reto 12 reps 70kg"), isNull())).thenReturn(dto);
-
-        WorkoutSession updated = workoutService.editExercise(15L, 0, "supino reto 12 reps 70kg", null);
-        assertNotNull(updated);
-        assertTrue(updated.getExercisesJson().contains("Supino Reto"));
-        assertFalse(updated.getExercisesJson().contains("Supino Inclinado"));
-    }
-
-    @Test
-    void editExercise_semExerciciosRetornados_deveLancarExcecao() {
-        WorkoutSession existente = WorkoutSession.builder().id(15L).user(testUser).exercisesJson("[]").build();
         when(workoutRepository.findById(15L)).thenReturn(Optional.of(existente));
 
         WorkoutDto dtoVazio = WorkoutDto.builder().exercises(List.of()).build();
         when(geminiService.parseWorkout(any(), any())).thenReturn(dtoVazio);
 
         assertThrows(IllegalArgumentException.class, () ->
-                workoutService.editExercise(15L, 0, "texto sem exercicio", null));
+                workoutService.editExerciseById(15L, "ex-1", "texto sem exercicio", null));
         verify(workoutRepository, never()).save(any());
-    }
-
-    @Test
-    void removeExercise_indiceValido_deveRemoverDoJson() {
-        String jsonOriginal = "[{\"name\":\"Exercicio 1\",\"series\":[]},{\"name\":\"Exercicio 2\",\"series\":[]}]";
-        WorkoutSession existente = WorkoutSession.builder()
-                .id(20L)
-                .user(testUser)
-                .exercisesJson(jsonOriginal)
-                .build();
-
-        when(workoutRepository.findById(20L)).thenReturn(Optional.of(existente));
-        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        WorkoutSession updated = workoutService.removeExercise(20L, 0);
-        assertFalse(updated.getExercisesJson().contains("Exercicio 1"));
-        assertTrue(updated.getExercisesJson().contains("Exercicio 2"));
-    }
-
-    @Test
-    void removeExercise_indiceInvalido_naoDeveAlterarLista() {
-        String jsonOriginal = "[{\"name\":\"Exercicio 1\",\"series\":[]}]";
-        WorkoutSession existente = WorkoutSession.builder()
-                .id(20L)
-                .user(testUser)
-                .exercisesJson(jsonOriginal)
-                .build();
-
-        when(workoutRepository.findById(20L)).thenReturn(Optional.of(existente));
-        when(workoutRepository.save(any(WorkoutSession.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        WorkoutSession updated = workoutService.removeExercise(20L, 99);
-        assertTrue(updated.getExercisesJson().contains("Exercicio 1"));
     }
 
     @Test
@@ -276,16 +175,6 @@ class WorkoutServiceTest {
         List<WorkoutSession> list = workoutService.getWorkoutsForDate(testUser, LocalDate.now());
         assertEquals(1, list.size());
         assertEquals("Treino Hoje", list.get(0).getRawInput());
-    }
-
-    @Test
-    void saveBotMessageId_deveSalvarQuandoEncontrado() {
-        WorkoutSession ws = WorkoutSession.builder().id(10L).build();
-        when(workoutRepository.findById(10L)).thenReturn(Optional.of(ws));
-
-        workoutService.saveBotMessageId(10L, 999);
-        assertEquals(999, ws.getBotMessageId());
-        verify(workoutRepository).save(ws);
     }
 
     @Test

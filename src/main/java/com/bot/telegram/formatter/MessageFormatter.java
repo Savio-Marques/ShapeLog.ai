@@ -172,20 +172,6 @@ public class MessageFormatter {
         );
     }
 
-    public String formatWorkoutRegistered(WorkoutSession session) {
-        List<WorkoutDto.ExerciseDto> exercises = workoutService.deserializeExercises(session.getExercisesJson());
-        StringBuilder sb = new StringBuilder();
-        sb.append("🏋️\u200d♂️ *Treino Registrado*\n\n");
-        String desc = session.getDescription() != null ? escapeMarkdown(session.getDescription()) : "Geral";
-        sb.append("*Treino:* ").append(desc).append("\n\n");
-        if (exercises != null) {
-            for (WorkoutDto.ExerciseDto ex : exercises) {
-                appendExerciseBlock(sb, ex);
-            }
-        }
-        return sb.toString().trim();
-    }
-
     public String formatExercisesAdded(List<WorkoutDto.ExerciseDto> exercises) {
         return formatExercisesAdded(exercises, null);
     }

@@ -10,7 +10,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F2CC0C?logo=grafana&logoColor=black)](https://grafana.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Testes-113%20passing-success?logo=junit5)](./src/test)
+[![Tests](https://img.shields.io/badge/Testes-106%20passing-success?logo=junit5)](./src/test)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](./LICENSE)
 
 </div>
@@ -26,7 +26,7 @@ O projeto foi construído com foco em **qualidade de código**, **segurança**, 
 - Stack de **Observabilidade (Prometheus + Grafana)** com métricas de negócio, pool HikariCP, **alertas automáticos no Telegram** e logs estruturados **JSON (`logstash`) + MDC**.
 - Provisionamento automatizado de dashboards e regras de alerta via **Infrastructure as Code (IaC)**.
 - Migrações versionadas com **Flyway** (`ddl-auto=validate`), Optimistic Locking (`@Version`) e estado conversacional persistente em banco.
-- Execução assíncrona com **Virtual Threads**, ordenação por `chatId`, chamadas de IA fora de transações, rate limiting por usuário e suíte com **113 testes** (incluindo `@SpringBootTest`).
+- Execução assíncrona com **Virtual Threads**, ordenação por `chatId`, chamadas de IA fora de transações, rate limiting por usuário e suíte com **106 testes** (incluindo `@SpringBootTest`).
 
 ---
 
@@ -119,7 +119,7 @@ com.bot.telegram/
 ├── bot/                  ← FitnessBot (LongPollingUpdateConsumer + MDC), CommandRouter, StateManager (persistente)
 │   ├── handler/          ← Orquestração de fluxo (MealHandler, WorkoutHandler, GoalHandler, ReportHandler)
 │   └── keyboard/         ← Fábrica de botões inline (InlineKeyboardFactory / InlineKeyboardRow)
-├── config/               ← TelegramConfig (Virtual Threads, TelegramClient, ZoneId), MetricsConfig
+├── config/               ← TelegramConfig (Virtual Threads, TelegramClient, ZoneId)
 ├── exception/            ← RateLimitExceededException
 ├── formatter/            ← Camada de apresentação (MessageFormatter — MarkdownV2)
 ├── service/              ← MealService, WorkoutService, GeminiService, RateLimiterService, UserService, ReportService
@@ -156,7 +156,7 @@ git push main
       │
       ▼
 ┌─────────────────────────────────────────┐
-│  1. 🧪 Roda 113 Testes (Java 21 + H2)   │ ← Se falhar, deploy é cancelado
+│  1. 🧪 Roda 106 Testes (Java 21 + H2)   │ ← Se falhar, deploy é cancelado
 │  2. 🐳 Build ARM64 (estágio Maven nativo)│
 │  3. 📦 Push → Docker Hub (latest + SHA) │
 │  4. 📁 Sync compose + monitoring → VPS  │
@@ -182,12 +182,11 @@ cd ShapeLog.ai
 
 ### 2. Configure as variáveis de ambiente
 
-Crie um arquivo `.env` na raiz do projeto (nunca commite este arquivo):
+Crie um arquivo `.env` na raiz do projeto (veja [`.env.example`](./.env.example), nunca commite `.env`):
 
 ```env
 # Telegram
 TELEGRAM_BOT_TOKEN=seu_token_aqui
-TELEGRAM_BOT_USERNAME=seu_bot_username
 TELEGRAM_BOT_ADMIN_ID=seu_id_telegram
 
 # PostgreSQL
@@ -229,12 +228,12 @@ docker compose -f docker-compose.dev.yml up -d
 ./mvnw test
 ```
 
-**113 testes automatizados** organizados por camada:
+**106 testes automatizados** organizados por camada:
 
 | Classe de Teste | Tipo | Qtd |
 |---|---|---|
 | `CommandRouterTest` | Unitário (Mockito) | 31 |
-| `WorkoutServiceTest` | Unitário (Mockito) | 23 |
+| `WorkoutServiceTest` | Unitário (Mockito) | 16 |
 | `MessageFormatterTest` | Unitário (Mockito) | 15 |
 | `StateManagerTest` | Unitário (Memória + Mock Repo) | 10 |
 | `MealServiceTest` | Unitário (Mockito) | 7 |

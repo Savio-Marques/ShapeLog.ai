@@ -50,10 +50,6 @@ public class MealService {
         return transactionTemplate.execute(status -> action.get());
     }
 
-    public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes) {
-        return registerMeal(user, text, audioBytes, null);
-    }
-
     public Meal registerMeal(UserTelegram user, String text, byte[] audioBytes, Integer userMessageId) {
         MealDto dto = geminiService.parseMeal(text, audioBytes);
         validarMealDto(dto);
@@ -121,10 +117,6 @@ public class MealService {
         mealRepository.deleteById(mealId);
     }
 
-    public Optional<Meal> findById(Long mealId) {
-        return mealRepository.findById(mealId);
-    }
-
     public Optional<Meal> findByIdAndUserId(Long mealId, Long userId) {
         return mealRepository.findByIdAndUserId(mealId, userId);
     }
@@ -137,9 +129,5 @@ public class MealService {
         Instant start = date.atStartOfDay(appZoneId).toInstant();
         Instant end = date.plusDays(1).atStartOfDay(appZoneId).toInstant();
         return mealRepository.findByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(user, start, end);
-    }
-
-    public List<Meal> getMealsForToday(UserTelegram user) {
-        return getMealsForDate(user, LocalDate.now(appZoneId));
     }
 }

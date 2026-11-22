@@ -32,10 +32,6 @@ public class InlineKeyboardFactory {
         this.appZoneId = appZoneId != null ? appZoneId : DEFAULT_ZONE;
     }
 
-    public InlineKeyboardMarkup criarBotoesRefeicao(Long mealId) {
-        return criarBotoesRefeicao(mealId, LocalDate.now(appZoneId));
-    }
-
     public InlineKeyboardMarkup criarBotoesRefeicao(Long mealId, LocalDate date) {
         LocalDate safeDate = date != null ? date : LocalDate.now(appZoneId);
         return markup(List.of(
@@ -99,24 +95,6 @@ public class InlineKeyboardFactory {
             ));
         }
         return markup(rows);
-    }
-
-    public InlineKeyboardMarkup criarBotoesExercicios(Long workoutId, int startIndex, int count) {
-        List<InlineKeyboardRow> rows = new ArrayList<>();
-
-        for (int i = 0; i < count; i++) {
-            int idx = startIndex + i;
-            String suffix = count > 1 ? " " + (i + 1) : "";
-            rows.add(new InlineKeyboardRow(
-                    button("✏️ Editar" + suffix, "edit_ex:" + workoutId + ":" + idx),
-                    button("❌ Excluir" + suffix, "delete_ex:" + workoutId + ":" + idx)
-            ));
-        }
-        return markup(rows);
-    }
-
-    public InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report) {
-        return criarBotoesRelatorio(report, LocalDate.now(appZoneId));
     }
 
     public InlineKeyboardMarkup criarBotoesRelatorio(DailyReportDto report, LocalDate date) {

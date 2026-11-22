@@ -38,11 +38,14 @@ build/
 *.iml
 .DS_Store
 *.log
+.agents/
+skills-lock.json
 
 ### Security & Secrets (CRITICAL) ###
 .env
 .env.*
 *.env
+!.env.example
 *.pem
 *.key
 *.pub

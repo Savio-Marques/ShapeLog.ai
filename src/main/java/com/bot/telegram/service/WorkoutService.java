@@ -63,10 +63,6 @@ public class WorkoutService implements IWorkoutService {
         public final List<WorkoutDto.ExerciseDto> addedExercises;
         public final boolean createdNewSession;
 
-        public WorkoutUpdateResult(WorkoutSession session, int startIndex, List<WorkoutDto.ExerciseDto> addedExercises) {
-            this(session, startIndex, addedExercises, false);
-        }
-
         public WorkoutUpdateResult(WorkoutSession session, int startIndex, List<WorkoutDto.ExerciseDto> addedExercises, boolean createdNewSession) {
             this.session = session;
             this.startIndex = startIndex;
@@ -131,18 +127,6 @@ public class WorkoutService implements IWorkoutService {
         });
     }
 
-    @Override
-    public WorkoutUpdateResult addExercisesToDraft(Long workoutId, String text, byte[] audioBytes, Integer userMessageId) {
-        workoutRepository.findById(workoutId)
-                .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        WorkoutDto dto = parseAndValidateWorkout(text, audioBytes);
-        return inTransaction(() -> {
-            WorkoutSession session = workoutRepository.findById(workoutId)
-                    .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-            return appendParsedExercises(session, dto, userMessageId, false);
-        });
-    }
-
     private WorkoutDto parseAndValidateWorkout(String text, byte[] audioBytes) {
         WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
         if (dto == null || dto.getExercises() == null || dto.getExercises().isEmpty()) {
@@ -167,29 +151,6 @@ public class WorkoutService implements IWorkoutService {
             session.setUserMessageId(userMessageId);
         }
         return new WorkoutUpdateResult(workoutRepository.save(session), startIndex, added, createdNewSession);
-    }
-
-    @Override
-    public WorkoutSession editExercise(Long workoutId, int exerciseIndex, String text, byte[] audioBytes) {
-        workoutRepository.findById(workoutId)
-                .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        WorkoutDto dto = geminiService.parseWorkout(text, audioBytes);
-        if (dto == null || dto.getExercises() == null || dto.getExercises().isEmpty()) {
-            throw new IllegalArgumentException("Não foi possível identificar o exercício atualizado. Tente descrever novamente com séries e peso!");
-        }
-        return inTransaction(() -> {
-            WorkoutSession session = workoutRepository.findById(workoutId)
-                    .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-            List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
-            if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
-                WorkoutDto.ExerciseDto oldEx = existingExercises.get(exerciseIndex);
-                WorkoutDto.ExerciseDto newEx = dto.getExercises().get(0);
-                newEx.setId(oldEx.getId() != null && !oldEx.getId().isBlank() ? oldEx.getId() : generateExerciseId());
-                existingExercises.set(exerciseIndex, newEx);
-            }
-            session.setExercisesJson(serializeExercises(existingExercises));
-            return workoutRepository.save(session);
-        });
     }
 
     @Override
@@ -218,18 +179,6 @@ public class WorkoutService implements IWorkoutService {
             session.setExercisesJson(serializeExercises(existingExercises));
             return workoutRepository.save(session);
         });
-    }
-
-    @Transactional
-    public WorkoutSession removeExercise(Long workoutId, int exerciseIndex) {
-        WorkoutSession session = workoutRepository.findById(workoutId)
-                .orElseThrow(() -> new IllegalArgumentException("Treino não encontrado com ID: " + workoutId));
-        List<WorkoutDto.ExerciseDto> existingExercises = deserializeExercises(session.getExercisesJson());
-        if (exerciseIndex >= 0 && exerciseIndex < existingExercises.size()) {
-            existingExercises.remove(exerciseIndex);
-        }
-        session.setExercisesJson(serializeExercises(existingExercises));
-        return workoutRepository.save(session);
     }
 
     @Override
@@ -277,22 +226,10 @@ public class WorkoutService implements IWorkoutService {
         return UUID.randomUUID().toString().substring(0, 8);
     }
 
-    @Transactional
-    public void saveBotMessageId(Long workoutId, Integer botMessageId) {
-        workoutRepository.findById(workoutId).ifPresent(session -> {
-            session.setBotMessageId(botMessageId);
-            workoutRepository.save(session);
-        });
-    }
-
     @Override
     @Transactional
     public void deleteWorkout(Long workoutId) {
         workoutRepository.deleteById(workoutId);
-    }
-
-    public Optional<WorkoutSession> findById(Long workoutId) {
-        return workoutRepository.findById(workoutId);
     }
 
     @Override
@@ -315,10 +252,6 @@ public class WorkoutService implements IWorkoutService {
         Instant start = today.atStartOfDay(appZoneId).toInstant();
         Instant end = today.plusDays(1).atStartOfDay(appZoneId).toInstant();
         return workoutRepository.findFirstByUserAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(user, start, end);
-    }
-
-    public List<WorkoutSession> getWorkoutsForToday(UserTelegram user) {
-        return getWorkoutsForDate(user, LocalDate.now(appZoneId));
     }
 
     private String serializeExercises(List<WorkoutDto.ExerciseDto> exercises) {
